@@ -1,0 +1,118 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 赛博朋克主题 */
+:root,
+[data-theme="cyberpunk"] {
+  --color-primary: #00f0ff;
+  --color-secondary: #ff006e;
+  --color-accent: #b026ff;
+  --color-success: #00ff9f;
+  --color-warning: #ffbe0b;
+  --color-danger: #ff006e;
+  
+  --bg-primary: #0a0e27;
+  --bg-secondary: #121a3a;
+  --bg-card: rgba(18, 26, 58, 0.8);
+  --bg-overlay: rgba(0, 240, 255, 0.05);
+  
+  --text-primary: #e0e6ff;
+  --text-secondary: #8a9bcf;
+  --text-muted: #5a6b9c;
+  
+  --border-color: rgba(0, 240, 255, 0.3);
+  --glow-primary: 0 0 20px rgba(0, 240, 255, 0.5);
+  --glow-secondary: 0 0 20px rgba(255, 0, 110, 0.5);
+  --shadow-card: 0 0 30px rgba(0, 240, 255, 0.15);
+  
+  --grid-line: rgba(0, 240, 255, 0.1);
+  --scan-line: rgba(0, 240, 255, 0.03);
+  
+  --font-family: 'Orbitron', 'Rajdhani', monospace;
+}
+
+/* 武侠主题 */
+[data-theme="wuxia"] {
+  --color-primary: #c73e1d;
+  --color-secondary: #2c3e50;
+  --color-accent: #d4a574;
+  --color-success: #5d8a3a;
+  --color-warning: #d4a574;
+  --color-danger: #8b1a0e;
+  
+  --bg-primary: #1a1a1a;
+  --bg-secondary: #2c2418;
+  --bg-card: rgba(44, 36, 24, 0.9);
+  --bg-overlay: rgba(199, 62, 29, 0.05);
+  
+  --text-primary: #f4e4bc;
+  --text-secondary: #c9a876;
+  --text-muted: #8a7858;
+  
+  --border-color: rgba(199, 62, 29, 0.4);
+  --glow-primary: 0 0 10px rgba(199, 62, 29, 0.3);
+  --glow-secondary: 0 0 10px rgba(212, 165, 116, 0.3);
+  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.5);
+  
+  --grid-line: rgba(199, 62, 29, 0.1);
+  --scan-line: rgba(212, 165, 116, 0.02);
+  
+  --font-family: 'Ma Shan Zheng', 'ZCOOL XiaoWei', serif;
+}
+
+/* 国漫主题 */
+[data-theme="guoman"] {
+  --color-primary: #ff6b9d;
+  --color-secondary: #4ecdc4;
+  --color-accent: #ffa45b;
+  --color-success: #95e77e;
+  --color-warning: #ffa45b;
+  --color-danger: #ff4757;
+  
+  --bg-primary: #fff5e1;
+  --bg-secondary: #ffe8d4;
+  --bg-card: rgba(255, 255, 255, 0.9);
+  --bg-overlay: rgba(255, 107, 157, 0.05);
+  
+  --text-primary: #2d3748;
+  --text-secondary: #4a5568;
+  --text-muted: #718096;
+  
+  --border-color: rgba(255, 107, 157, 0.3);
+  --glow-primary: 0 4px 20px rgba(255, 107, 157, 0.25);
+  --glow-secondary: 0 4px 20px rgba(78, 205, 196, 0.25);
+  --shadow-card: 0 8px 30px rgba(255, 107, 157, 0.15);
+  
+  --grid-line: rgba(255, 107, 157, 0.08);
+  --scan-line: rgba(255, 164, 91, 0.03);
+  
+  --font-family: 'ZCOOL KuaiLe', 'Long Cang', sans-serif;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-family);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  transition: background 0.3s ease, color 0.3s ease;
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-primary);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-secondary);
+}
