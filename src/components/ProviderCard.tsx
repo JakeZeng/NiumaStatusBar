@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { CheckCircle, XCircle, RefreshCw, Settings } from 'lucide-react';
 import type { ProviderConfig, UsageStatus } from '../types';
 
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export function ProviderCard({ provider, onEdit }: Props) {
+  const { t } = useTranslation();
   const [status, setStatus] = useState<UsageStatus | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -108,7 +110,7 @@ export function ProviderCard({ provider, onEdit }: Props) {
 
       <div className="mb-4">
         <div className="flex items-baseline justify-between mb-2">
-          <span className="text-sm text-[var(--text-secondary)]">余额</span>
+          <span className="text-sm text-[var(--text-secondary)]">{t('provider.balance')}</span>
           <span className="text-2xl font-bold text-[var(--color-primary)] 
                           drop-shadow-[var(--glow-primary)]">
             {status?.balance !== null && status?.balance !== undefined
@@ -131,13 +133,13 @@ export function ProviderCard({ provider, onEdit }: Props) {
 
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-[var(--bg-secondary)]/50 rounded-lg p-2">
-          <div className="text-xs text-[var(--text-muted)]">延迟</div>
+          <div className="text-xs text-[var(--text-muted)]">{t('provider.latency')}</div>
           <div className="text-sm font-semibold text-[var(--text-primary)]">
             {status?.avg_latency ? `${status.avg_latency}ms` : '--'}
           </div>
         </div>
         <div className="bg-[var(--bg-secondary)]/50 rounded-lg p-2">
-          <div className="text-xs text-[var(--text-muted)]">今日请求</div>
+          <div className="text-xs text-[var(--text-muted)]">{t('provider.requestsToday')}</div>
           <div className="text-sm font-semibold text-[var(--text-primary)]">
             {status?.requests_today ?? '--'}
           </div>

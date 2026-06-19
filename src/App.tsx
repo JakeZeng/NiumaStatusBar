@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { themeManager, type ThemeId } from './themes/ThemeManager';
 import { ThemeSwitcher } from './components/ThemeSwitcher';
+import { LanguageSwitcher } from './components/LanguageSwitcher';
 import { ProviderCard } from './components/ProviderCard';
 import { ConfigModal } from './components/ConfigModal';
 import { ThemedBackground } from './components/ThemedBackground';
@@ -11,6 +13,7 @@ import { Plus } from 'lucide-react';
 import type { ProviderConfig } from './types';
 
 export default function App() {
+  const { t } = useTranslation();
   const [theme] = useState<ThemeId>(themeManager.getCurrent());
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [editing, setEditing] = useState<ProviderConfig | null>(null);
@@ -25,7 +28,6 @@ export default function App() {
     try {
       const list = await invoke<ProviderConfig[]>('get_providers');
       setProviders(list);
-      // 默认选中第一个
       if (list.length > 0 && !selectedProvider) {
         setSelectedProvider(list[0].id);
       }
@@ -69,7 +71,7 @@ export default function App() {
           <h1 className="text-2xl font-bold bg-gradient-to-r 
                         from-[var(--color-primary)] to-[var(--color-secondary)]
                         bg-clip-text text-transparent">
-            AI 模型监控
+            {t('app.title')}
           </h1>
           <div className="flex items-center gap-3">
             <ImportExport onProvidersUpdated={handleProvidersUpdated} />
@@ -80,15 +82,15 @@ export default function App() {
                        text-white font-medium hover:shadow-[var(--glow-primary)] transition-all"
             >
               <Plus className="w-4 h-4" />
-              添加 Provider
+              {t('app.addProvider')}
             </button>
+            <LanguageSwitcher />
             <ThemeSwitcher />
           </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
-        {/* Provider 标签切换 */}
         {providers.length > 0 && (
           <div className="flex gap-2 overflow-x-auto pb-2">
             {providers.map(provider => (
@@ -107,7 +109,6 @@ export default function App() {
           </div>
         )}
 
-        {/* 趋势图表 */}
         {selectedProvider && (
           <HistoryChart 
             providerId={selectedProvider} 
@@ -115,12 +116,11 @@ export default function App() {
           />
         )}
 
-        {/* Provider 卡片网格 */}
         {providers.length === 0 ? (
           <div className="text-center py-20">
             <div className="text-6xl mb-4 opacity-50">📡</div>
-            <p className="text-[var(--text-secondary)] text-lg">还没有添加任何 Provider</p>
-            <p className="text-[var(--text-muted)] mt-2">点击右上角"添加 Provider"开始配置</p>
+            <p className="text-[var(--text-secondary)] text-lg">{t('app.noProviders')}</p>
+            <p className="text-[var(--text-muted)] mt-2">{t('app.noProvidersHint')}</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">

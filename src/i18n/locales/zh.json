@@ -1,0 +1,53 @@
+{
+  "app": {
+    "title": "AI 模型监控",
+    "addProvider": "添加 Provider",
+    "noProviders": "还没有添加任何 Provider",
+    "noProvidersHint": "点击右上角\"添加 Provider\"开始配置"
+  },
+  "theme": {
+    "cyberpunk": "赛博朋克",
+    "wuxia": "武侠江湖",
+    "guoman": "国漫"
+  },
+  "provider": {
+    "balance": "余额",
+    "used": "已用",
+    "latency": "延迟",
+    "requestsToday": "今日请求",
+    "edit": "编辑 Provider",
+    "add": "新增 Provider",
+    "name": "显示名称",
+    "apiKey": "API Key",
+    "baseUrl": "Base URL",
+    "queryEndpoint": "查询接口",
+    "method": "请求方法",
+    "refreshInterval": "刷新间隔 (秒)",
+    "presets": "快速预设",
+    "save": "保存",
+    "cancel": "取消",
+    "delete": "删除"
+  },
+  "chart": {
+    "balanceTrend": "余额趋势",
+    "noData": "暂无历史数据，等待轮询采集...",
+    "range1h": "1小时",
+    "range6h": "6小时",
+    "range24h": "24小时",
+    "range7d": "7天"
+  },
+  "config": {
+    "export": "导出",
+    "import": "导入",
+    "exportSuccess": "配置已导出",
+    "importSuccess": "已导入 {{count}} 个 Provider",
+    "importError": "导入失败: 文件格式不正确",
+    "exportError": "导出失败"
+  },
+  "status": {
+    "active": "正常",
+    "error": "错误",
+    "checking": "检查中",
+    "disabled": "已禁用"
+  }
+}

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
 import { Download, Upload, Check, AlertCircle } from 'lucide-react';
 import type { ProviderConfig } from '../types';
@@ -8,6 +9,7 @@ interface Props {
 }
 
 export function ImportExport({ onProvidersUpdated }: Props) {
+  const { t } = useTranslation();
   const [importing, setImporting] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -21,9 +23,9 @@ export function ImportExport({ onProvidersUpdated }: Props) {
       a.download = `ai-model-monitor-config-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
-      setMessage({ type: 'success', text: '配置已导出' });
+      setMessage({ type: 'success', text: t('config.exportSuccess') });
     } catch (err) {
-      setMessage({ type: 'error', text: '导出失败: ' + err });
+      setMessage({ type: 'error', text: t('config.exportError') + ': ' + err });
     }
   };
 
@@ -42,9 +44,9 @@ export function ImportExport({ onProvidersUpdated }: Props) {
         const text = await file.text();
         const providers = await invoke<ProviderConfig[]>('import_config', { json: text });
         onProvidersUpdated(providers);
-        setMessage({ type: 'success', text: `已导入 ${providers.length} 个 Provider` });
+        setMessage({ type: 'success', text: t('config.importSuccess', { count: providers.length }) });
       } catch (err) {
-        setMessage({ type: 'error', text: '导入失败: 文件格式不正确' });
+        setMessage({ type: 'error', text: t('config.importError') });
       } finally {
         setImporting(false);
       }
@@ -59,10 +61,10 @@ export function ImportExport({ onProvidersUpdated }: Props) {
         className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg
                    bg-[var(--bg-secondary)] text-[var(--text-secondary)]
                    hover:text-[var(--color-primary)] transition-colors"
-        title="导出配置"
+        title={t('config.export')}
       >
         <Download className="w-3.5 h-3.5" />
-        导出
+        {t('config.export')}
       </button>
       
       <button
@@ -72,10 +74,10 @@ export function ImportExport({ onProvidersUpdated }: Props) {
                    bg-[var(--bg-secondary)] text-[var(--text-secondary)]
                    hover:text-[var(--color-primary)] transition-colors
                    disabled:opacity-50"
-        title="导入配置"
+        title={t('config.import')}
       >
         <Upload className="w-3.5 h-3.5" />
-        导入
+        {t('config.import')}
       </button>
 
       {message && (

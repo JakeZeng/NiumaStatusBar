@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts';
 import { TrendingUp, Clock, ChevronDown } from 'lucide-react';
@@ -11,14 +12,15 @@ interface Props {
 
 type TimeRange = '1h' | '6h' | '24h' | '7d';
 
-const TIME_RANGES: { key: TimeRange; label: string; seconds: number }[] = [
-  { key: '1h', label: '1小时', seconds: 3600 },
-  { key: '6h', label: '6小时', seconds: 21600 },
-  { key: '24h', label: '24小时', seconds: 86400 },
-  { key: '7d', label: '7天', seconds: 604800 },
+const TIME_RANGES: { key: TimeRange; labelKey: string; seconds: number }[] = [
+  { key: '1h', labelKey: 'chart.range1h', seconds: 3600 },
+  { key: '6h', labelKey: 'chart.range6h', seconds: 21600 },
+  { key: '24h', labelKey: 'chart.range24h', seconds: 86400 },
+  { key: '7d', labelKey: 'chart.range7d', seconds: 604800 },
 ];
 
 export function HistoryChart({ providerId, providerName }: Props) {
+  const { t } = useTranslation();
   const [data, setData] = useState<UsageStatus[]>([]);
   const [range, setRange] = useState<TimeRange>('24h');
   const [rangeOpen, setRangeOpen] = useState(false);
@@ -64,7 +66,7 @@ export function HistoryChart({ providerId, providerName }: Props) {
         <div className="flex items-center gap-2">
           <TrendingUp className="w-5 h-5 text-[var(--color-primary)]" />
           <h3 className="font-semibold text-[var(--text-primary)]">
-            {providerName} · 余额趋势
+            {providerName} · {t('chart.balanceTrend')}
           </h3>
         </div>
         
@@ -77,7 +79,7 @@ export function HistoryChart({ providerId, providerName }: Props) {
                        hover:text-[var(--text-primary)] transition-colors"
           >
             <Clock className="w-3.5 h-3.5" />
-            {currentRange.label}
+            {t(currentRange.labelKey)}
             <ChevronDown className={`w-3.5 h-3.5 transition-transform ${rangeOpen ? 'rotate-180' : ''}`} />
           </button>
           
@@ -94,7 +96,7 @@ export function HistoryChart({ providerId, providerName }: Props) {
                               ? 'bg-[var(--bg-overlay)] text-[var(--color-primary)]' 
                               : 'text-[var(--text-secondary)] hover:bg-[var(--bg-overlay)]'}`}
                 >
-                  {r.label}
+                  {t(r.labelKey)}
                 </button>
               ))}
             </div>
@@ -105,7 +107,7 @@ export function HistoryChart({ providerId, providerName }: Props) {
       {/* Chart */}
       {data.length === 0 ? (
         <div className="h-48 flex items-center justify-center text-[var(--text-muted)]">
-          <p>暂无历史数据，等待轮询采集...</p>
+          <p>{t('chart.noData')}</p>
         </div>
       ) : (
         <div className="h-64">
