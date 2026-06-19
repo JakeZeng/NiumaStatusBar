@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { useState, useEffect } from 'react';
 import { CheckCircle, XCircle, RefreshCw, Settings } from 'lucide-react';
 import type { ProviderConfig, UsageStatus } from '../types';
@@ -12,6 +13,35 @@ export function ProviderCard({ provider, onEdit }: Props) {
   const [status, setStatus] = useState<UsageStatus | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // 监听后端推送的状态更新
+  useEffect(() => {
+    const unlisten = listen<UsageStatus>('status-update', (event) => {
+      if (event.payload.provider_id === provider.id) {
+        setStatus(event.payload);
+        setLoading(false);
+      }
+    });
+
+    return () => {
+      unlisten.then(fn => fn());
+    };
+  }, [provider.id]);
+
+  // 初始加载状态
+  useEffect(() => {
+    const loadStatus = async () => {
+      try {
+        const result = await invoke<UsageStatus | null>('get_provider_status', { id: provider.id });
+        if (result) {
+          setStatus(result);
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    loadStatus();
+  }, [provider.id]);
+
   const fetchStatus = async () => {
     setLoading(true);
     try {
@@ -24,22 +54,14 @@ export function ProviderCard({ provider, onEdit }: Props) {
     }
   };
 
-  useEffect(() => {
-    if (provider.isEnabled) {
-      fetchStatus();
-      const timer = setInterval(fetchStatus, provider.refreshInterval * 1000);
-      return () => clearInterval(timer);
-    }
-  }, [provider.id, provider.refreshInterval, provider.isEnabled]);
-
   const getStatusIcon = () => {
     if (loading) return <RefreshCw className="w-5 h-5 text-[var(--color-warning)] animate-spin" />;
-    if (status?.lastError) return <XCircle className="w-5 h-5 text-[var(--color-danger)]" />;
+    if (status?.last_error) return <XCircle className="w-5 h-5 text-[var(--color-danger)]" />;
     return <CheckCircle className="w-5 h-5 text-[var(--color-success)]" />;
   };
 
-  const usagePercent = status?.balanceLimit && status.balanceUsed
-    ? (status.balanceUsed / status.balanceLimit) * 100
+  const usagePercent = status?.balance_limit && status.balance_used
+    ? (status.balance_used / status.balance_limit) * 100
     : 0;
 
   return (
@@ -111,13 +133,13 @@ export function ProviderCard({ provider, onEdit }: Props) {
         <div className="bg-[var(--bg-secondary)]/50 rounded-lg p-2">
           <div className="text-xs text-[var(--text-muted)]">延迟</div>
           <div className="text-sm font-semibold text-[var(--text-primary)]">
-            {status?.avgLatency ? `${status.avgLatency}ms` : '--'}
+            {status?.avg_latency ? `${status.avg_latency}ms` : '--'}
           </div>
         </div>
         <div className="bg-[var(--bg-secondary)]/50 rounded-lg p-2">
           <div className="text-xs text-[var(--text-muted)]">今日请求</div>
           <div className="text-sm font-semibold text-[var(--text-primary)]">
-            {status?.requestsToday ?? '--'}
+            {status?.requests_today ?? '--'}
           </div>
         </div>
       </div>

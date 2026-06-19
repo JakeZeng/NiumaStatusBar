@@ -34,6 +34,7 @@ pub struct UsageStatus {
 pub struct ProviderManager {
     client: reqwest::Client,
     providers: RwLock<Vec<ProviderConfig>>,
+    statuses: RwLock<HashMap<String, UsageStatus>>,
 }
 
 impl ProviderManager {
@@ -44,11 +45,16 @@ impl ProviderManager {
                 .build()
                 .unwrap_or_default(),
             providers: RwLock::new(Vec::new()),
+            statuses: RwLock::new(HashMap::new()),
         }
     }
 
     pub async fn get_providers(&self) -> Vec<ProviderConfig> {
         self.providers.read().await.clone()
+    }
+
+    pub async fn set_providers(&self, providers: Vec<ProviderConfig>) {
+        *self.providers.write().await = providers;
     }
 
     pub async fn add_provider(&self, provider: ProviderConfig) {
@@ -64,6 +70,15 @@ impl ProviderManager {
 
     pub async fn delete_provider(&self, id: String) {
         self.providers.write().await.retain(|p| p.id != id);
+        self.statuses.write().await.remove(&id);
+    }
+
+    pub async fn update_status(&self, provider_id: String, status: UsageStatus) {
+        self.statuses.write().await.insert(provider_id, status);
+    }
+
+    pub async fn get_status(&self, provider_id: &str) -> Option<UsageStatus> {
+        self.statuses.read().await.get(provider_id).cloned()
     }
 
     pub async fn fetch_usage(&self, provider: &ProviderConfig) -> Result<UsageStatus, String> {

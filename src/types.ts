@@ -14,13 +14,13 @@ export interface ProviderConfig {
 }
 
 export interface UsageStatus {
-  providerId: string;
+  provider_id: string;
   timestamp: number;
   balance: number | null;
-  balanceUsed: number | null;
-  balanceLimit: number | null;
-  requestsToday: number | null;
-  errorRate: number | null;
-  avgLatency: number | null;
-  lastError: string | null;
+  balance_used: number | null;
+  balance_limit: number | null;
+  requests_today: number | null;
+  error_rate: number | null;
+  avg_latency: number | null;
+  last_error: string | null;
 }
