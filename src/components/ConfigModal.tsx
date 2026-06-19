@@ -4,9 +4,48 @@ import { X } from 'lucide-react';
 import type { ProviderConfig } from '../types';
 
 const PROVIDER_PRESETS = [
-  { type: 'openai', name: 'OpenAI', baseUrl: 'https://api.openai.com', endpoint: '/v1/usage' },
-  { type: 'anthropic', name: 'Anthropic', baseUrl: 'https://api.anthropic.com', endpoint: '/v1/organizations/self/subscription' },
-  { type: 'deepseek', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com', endpoint: '/v1/user/usage' },
+  {
+    type: 'openai',
+    name: 'OpenAI',
+    baseUrl: 'https://api.openai.com',
+    endpoint: '/v1/usage',
+    method: 'GET',
+  },
+  {
+    type: 'anthropic',
+    name: 'Anthropic',
+    baseUrl: 'https://api.anthropic.com',
+    endpoint: '/v1/organizations/self/subscription',
+    method: 'GET',
+  },
+  {
+    type: 'deepseek',
+    name: 'DeepSeek',
+    baseUrl: 'https://api.deepseek.com',
+    endpoint: '/v1/user/usage',
+    method: 'GET',
+  },
+  {
+    type: 'minimax_coding',
+    name: 'MiniMax Token Plan (国内)',
+    baseUrl: 'https://www.minimaxi.com',
+    endpoint: '/v1/token_plan/remains',
+    method: 'GET',
+  },
+  {
+    type: 'minimax_token',
+    name: 'MiniMax Coding Plan (海外)',
+    baseUrl: 'https://api.minimax.io',
+    endpoint: '/v1/api/openplatform/coding_plan/remains',
+    method: 'GET',
+  },
+  {
+    type: 'volcengine_coding',
+    name: '火山方舟 Coding Plan',
+    baseUrl: 'https://ark.cn-beijing.volces.com/api/coding/v3',
+    endpoint: '/chat/completions',
+    method: 'POST',
+  },
 ];
 
 interface Props {
@@ -34,12 +73,29 @@ export function ConfigModal({ isOpen, provider, onClose, onSave }: Props) {
   }, [provider]);
 
   const applyPreset = (preset: typeof PROVIDER_PRESETS[0]) => {
-    setForm(f => ({
-      ...f,
-      provider: preset.type as ProviderConfig['provider'],
-      baseUrl: preset.baseUrl,
-      queryEndpoint: preset.endpoint,
-    }));
+    setForm(f => {
+      const newForm: Partial<ProviderConfig> = {
+        ...f,
+        provider: preset.type as ProviderConfig['provider'],
+        baseUrl: preset.baseUrl,
+        queryEndpoint: preset.endpoint,
+        queryMethod: preset.method as 'GET' | 'POST',
+      };
+
+      // 火山方舟 Coding Plan 需要 body 发起一次最小请求以触发响应头
+      if (preset.type === 'volcengine_coding') {
+        newForm.queryHeaders = {
+          'Content-Type': 'application/json',
+          'x-ark-customer': 'monitor-usage',
+        };
+        newForm.queryParams = {};
+        // 火山方舟的查询需要 POST 一个最小 chat 请求，body 在后端固定注入
+      } else {
+        newForm.queryHeaders = { 'Content-Type': 'application/json' };
+        newForm.queryParams = {};
+      }
+      return newForm;
+    });
   };
 
   const handleSubmit = (e: React.FormEvent) => {

@@ -203,6 +203,7 @@ impl Database {
                 error_rate: row.get(6)?,
                 avg_latency: row.get(7)?,
                 last_error: row.get(8)?,
+                ..Default::default()
             })
         })?;
         

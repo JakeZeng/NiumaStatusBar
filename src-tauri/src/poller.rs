@@ -67,13 +67,8 @@ impl Poller {
                         let error_status = UsageStatus {
                             provider_id: provider.id.clone(),
                             timestamp: chrono::Utc::now().timestamp(),
-                            balance: None,
-                            balance_used: None,
-                            balance_limit: None,
-                            requests_today: None,
-                            error_rate: None,
-                            avg_latency: None,
                             last_error: Some(err),
+                            ..Default::default()
                         };
                         manager.update_status(provider.id.clone(), error_status.clone()).await;
                         let _ = app_handle.emit("status-update", &error_status);
