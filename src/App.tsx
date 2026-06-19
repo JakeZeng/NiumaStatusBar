@@ -8,9 +8,9 @@ import { ConfigModal } from './components/ConfigModal';
 import { ThemedBackground } from './components/ThemedBackground';
 import { HistoryChart } from './components/HistoryChart';
 import { ImportExport } from './components/ImportExport';
-import { invoke } from '@tauri-apps/api/core';
-import { Plus } from 'lucide-react';
-import type { ProviderConfig } from './types';
+import { ProviderHub } from './components/ProviderHub';
+import { Plus, Library } from 'lucide-react';
+import { api, type ProviderConfig } from './api';
 
 export default function App() {
   const { t } = useTranslation();
@@ -18,6 +18,7 @@ export default function App() {
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [editing, setEditing] = useState<ProviderConfig | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [hubOpen, setHubOpen] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
 
   useEffect(() => {
@@ -26,7 +27,7 @@ export default function App() {
 
   const loadProviders = async () => {
     try {
-      const list = await invoke<ProviderConfig[]>('get_providers');
+      const list = await api.getProviders();
       setProviders(list);
       if (list.length > 0 && !selectedProvider) {
         setSelectedProvider(list[0].id);
@@ -40,9 +41,9 @@ export default function App() {
     try {
       const existing = providers.find(p => p.id === provider.id);
       if (existing) {
-        await invoke('update_provider', { id: provider.id, provider });
+        await api.updateProvider(provider.id, provider);
       } else {
-        await invoke('add_provider', { provider });
+        await api.addProvider(provider);
       }
       await loadProviders();
       setModalOpen(false);
@@ -54,7 +55,7 @@ export default function App() {
 
   const handleProvidersUpdated = (newProviders: ProviderConfig[]) => {
     setProviders(newProviders);
-    if (newProviders.length > 0) {
+    if (newProviders.length > 0 && !selectedProvider) {
       setSelectedProvider(newProviders[0].id);
     }
   };
@@ -73,8 +74,20 @@ export default function App() {
                         bg-clip-text text-transparent">
             {t('app.title')}
           </h1>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <ImportExport onProvidersUpdated={handleProvidersUpdated} />
+            <button
+              onClick={() => setHubOpen(true)}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg
+                       bg-[var(--bg-card)] border border-[var(--border-color)]
+                       text-[var(--text-primary)]
+                       hover:border-[var(--color-primary)] hover:shadow-[var(--glow-primary)]
+                       transition-all"
+              title="从预置目录添加"
+            >
+              <Library className="w-4 h-4" />
+              供应商中心
+            </button>
             <button
               onClick={() => { setEditing(null); setModalOpen(true); }}
               className="flex items-center gap-2 px-4 py-2 rounded-lg
@@ -82,7 +95,7 @@ export default function App() {
                        text-white font-medium hover:shadow-[var(--glow-primary)] transition-all"
             >
               <Plus className="w-4 h-4" />
-              {t('app.addProvider')}
+              自定义
             </button>
             <LanguageSwitcher />
             <ThemeSwitcher />
@@ -120,7 +133,18 @@ export default function App() {
           <div className="text-center py-20">
             <div className="text-6xl mb-4 opacity-50">📡</div>
             <p className="text-[var(--text-secondary)] text-lg">{t('app.noProviders')}</p>
-            <p className="text-[var(--text-muted)] mt-2">{t('app.noProvidersHint')}</p>
+            <p className="text-[var(--text-muted)] mt-2">
+              点击"供应商中心"选择预设并填入 API Key 开始配置
+            </p>
+            <button
+              onClick={() => setHubOpen(true)}
+              className="mt-6 inline-flex items-center gap-2 px-6 py-3 rounded-lg
+                       bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-secondary)]
+                       text-white font-medium hover:shadow-[var(--glow-primary)] transition-all"
+            >
+              <Library className="w-4 h-4" />
+              打开供应商中心
+            </button>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -141,6 +165,14 @@ export default function App() {
         onClose={() => { setModalOpen(false); setEditing(null); }}
         onSave={handleSaveProvider}
       />
+
+      {hubOpen && (
+        <ProviderHub
+          myProviders={providers}
+          onProvidersUpdated={handleProvidersUpdated}
+          onClose={() => setHubOpen(false)}
+        />
+      )}
     </div>
   );
 }

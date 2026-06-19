@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod catalog;
 mod commands;
 mod poller;
 mod providers;
@@ -94,6 +95,10 @@ fn main() {
             commands::get_usage_history,
             commands::export_config,
             commands::import_config,
+            commands::get_provider_catalog,
+            commands::enable_preset,
+            commands::toggle_provider,
+            commands::get_active_preset_ids,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

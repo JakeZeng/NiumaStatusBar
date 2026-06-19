@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
 import { Download, Upload, Check, AlertCircle } from 'lucide-react';
-import type { ProviderConfig } from '../types';
+import type { ProviderConfig } from '../api';
 
 interface Props {
   onProvidersUpdated: (providers: ProviderConfig[]) => void;

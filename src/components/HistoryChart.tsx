@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts';
 import { TrendingUp, Clock, ChevronDown } from 'lucide-react';
-import type { UsageStatus } from '../types';
+import type { UsageStatus } from '../api';
 
 interface Props {
   providerId: string;

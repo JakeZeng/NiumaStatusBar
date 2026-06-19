@@ -3,7 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CheckCircle, XCircle, RefreshCw, Settings } from 'lucide-react';
-import type { ProviderConfig, UsageStatus } from '../types';
+import type { ProviderConfig, UsageStatus } from '../api';
 
 interface Props {
   provider: ProviderConfig;

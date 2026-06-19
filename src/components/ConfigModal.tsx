@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
-import type { ProviderConfig } from '../types';
+import type { ProviderConfig } from '../api';
 
 const PROVIDER_PRESETS = [
   {
