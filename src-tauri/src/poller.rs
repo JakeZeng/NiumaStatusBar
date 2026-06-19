@@ -1,4 +1,5 @@
 use crate::providers::{ProviderConfig, ProviderManager, UsageStatus};
+use crate::storage::Database;
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
@@ -8,15 +9,19 @@ use tokio::time;
 pub struct Poller {
     manager: Arc<ProviderManager>,
     app_handle: AppHandle,
+    db: Arc<Database>,
 }
 
 impl Poller {
-    pub fn new(manager: Arc<ProviderManager>, app_handle: AppHandle) -> Self {
-        Self { manager, app_handle }
+    pub fn new(manager: Arc<ProviderManager>, app_handle: AppHandle, db: Arc<Database>) -> Self {
+        Self { manager, app_handle, db }
     }
 
     /// 启动所有 Provider 的轮询
     pub async fn start_all(&self) {
+        // 清理旧历史数据
+        let _ = self.db.cleanup_old_history();
+        
         let providers = self.manager.get_providers().await;
         for provider in providers {
             if provider.is_enabled {
@@ -29,6 +34,7 @@ impl Poller {
     pub fn spawn_poll(&self, provider: ProviderConfig) {
         let manager = self.manager.clone();
         let app_handle = self.app_handle.clone();
+        let db = self.db.clone();
         let interval_secs = provider.refresh_interval.max(10); // 最小 10 秒
 
         tokio::spawn(async move {
@@ -50,6 +56,8 @@ impl Poller {
 
                 match result {
                     Ok(status) => {
+                        // 保存到历史记录
+                        let _ = db.save_usage_history(&status);
                         // 更新内存中的状态
                         manager.update_status(provider.id.clone(), status.clone()).await;
                         // 通知前端

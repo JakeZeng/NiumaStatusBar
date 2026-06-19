@@ -1,4 +1,4 @@
-use crate::providers::ProviderConfig;
+use crate::providers::{ProviderConfig, UsageStatus};
 use rusqlite::{params, Connection, Result};
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -18,7 +18,7 @@ impl Database {
         
         let conn = Connection::open(db_path)?;
         
-        // 创建表
+        // 创建 Provider 配置表
         conn.execute(
             "CREATE TABLE IF NOT EXISTS providers (
                 id TEXT PRIMARY KEY,
@@ -34,6 +34,31 @@ impl Database {
                 is_enabled INTEGER NOT NULL,
                 status TEXT NOT NULL
             )",
+            [],
+        )?;
+        
+        // 创建使用历史表
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS usage_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                provider_id TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                balance REAL,
+                balance_used REAL,
+                balance_limit REAL,
+                requests_today INTEGER,
+                error_rate REAL,
+                avg_latency INTEGER,
+                last_error TEXT,
+                FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE CASCADE
+            )",
+            [],
+        )?;
+        
+        // 创建索引加速查询
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_usage_history_provider_time 
+             ON usage_history(provider_id, timestamp DESC)",
             [],
         )?;
         
@@ -122,6 +147,75 @@ impl Database {
     pub fn delete_provider(&self, id: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM providers WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+    
+    // ===== 使用历史相关方法 =====
+    
+    pub fn save_usage_history(&self, status: &UsageStatus) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO usage_history 
+             (provider_id, timestamp, balance, balance_used, balance_limit, 
+              requests_today, error_rate, avg_latency, last_error)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                status.provider_id,
+                status.timestamp,
+                status.balance,
+                status.balance_used,
+                status.balance_limit,
+                status.requests_today,
+                status.error_rate,
+                status.avg_latency,
+                status.last_error,
+            ],
+        )?;
+        Ok(())
+    }
+    
+    pub fn get_usage_history(
+        &self,
+        provider_id: &str,
+        limit: i64,
+        since: Option<i64>,
+    ) -> Result<Vec<UsageStatus>> {
+        let conn = self.conn.lock().unwrap();
+        let since_ts = since.unwrap_or(0);
+        
+        let mut stmt = conn.prepare(
+            "SELECT provider_id, timestamp, balance, balance_used, balance_limit,
+                    requests_today, error_rate, avg_latency, last_error
+             FROM usage_history
+             WHERE provider_id = ?1 AND timestamp >= ?2
+             ORDER BY timestamp DESC
+             LIMIT ?3"
+        )?;
+        
+        let rows = stmt.query_map(params![provider_id, since_ts, limit], |row| {
+            Ok(UsageStatus {
+                provider_id: row.get(0)?,
+                timestamp: row.get(1)?,
+                balance: row.get(2)?,
+                balance_used: row.get(3)?,
+                balance_limit: row.get(4)?,
+                requests_today: row.get(5)?,
+                error_rate: row.get(6)?,
+                avg_latency: row.get(7)?,
+                last_error: row.get(8)?,
+            })
+        })?;
+        
+        rows.collect()
+    }
+    
+    pub fn cleanup_old_history(&self) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let cutoff = chrono::Utc::now().timestamp() - 7 * 24 * 3600;
+        conn.execute(
+            "DELETE FROM usage_history WHERE timestamp < ?1",
+            params![cutoff],
+        )?;
         Ok(())
     }
 }

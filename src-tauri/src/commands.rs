@@ -70,3 +70,46 @@ pub async fn get_provider_status(
 ) -> Result<Option<UsageStatus>, String> {
     Ok(manager.get_status(&id).await)
 }
+
+#[tauri::command]
+pub async fn get_usage_history(
+    provider_id: String,
+    limit: Option<i64>,
+    since: Option<i64>,
+    db: State<'_, Arc<Database>>,
+) -> Result<Vec<UsageStatus>, String> {
+    db.get_usage_history(&provider_id, limit.unwrap_or(50), since)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn export_config(
+    db: State<'_, Arc<Database>>,
+) -> Result<String, String> {
+    let providers = db.load_providers().map_err(|e| e.to_string())?;
+    let export = serde_json::json!({
+        "version": "1.0",
+        "exported_at": chrono::Utc::now().timestamp(),
+        "providers": providers,
+    });
+    serde_json::to_string_pretty(&export).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn import_config(
+    json: String,
+    manager: State<'_, Arc<ProviderManager>>,
+    db: State<'_, Arc<Database>>,
+) -> Result<Vec<ProviderConfig>, String> {
+    let parsed: serde_json::Value = serde_json::from_str(&json).map_err(|e| e.to_string())?;
+    let providers: Vec<ProviderConfig> = serde_json::from_value(
+        parsed["providers"].clone()
+    ).map_err(|e| e.to_string())?;
+    
+    for provider in &providers {
+        db.save_provider(provider).map_err(|e| e.to_string())?;
+    }
+    
+    manager.set_providers(providers.clone()).await;
+    Ok(providers)
+}
