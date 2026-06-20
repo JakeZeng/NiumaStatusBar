@@ -5,7 +5,7 @@
 # ============================================================
 
 # JDK 17（Android Gradle Plugin 兼容版本）
-export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+export JAVA_HOME=/root/.local/share/mise/installs/java/17.0.2
 
 # Android SDK 路径
 export ANDROID_HOME="$HOME/Android/Sdk"
