@@ -1,0 +1,25 @@
+plugins {
+    id 'java-gradle-plugin'
+}
+
+gradlePlugin {
+    plugins {
+        pluginsForCoolKids {
+            id = 'rust'
+            implementationClass = 'com.aimonitor.app.kotlin.RustPlugin'
+        }
+    }
+}
+
+repositories {
+    maven { url 'https://maven.aliyun.com/repository/google' }
+    maven { url 'https://maven.aliyun.com/repository/central' }
+    maven { url 'https://maven.aliyun.com/repository/public' }
+    google()
+    mavenCentral()
+}
+
+dependencies {
+    compileOnly(gradleApi())
+    implementation("com.android.tools.build:gradle:8.11.0")
+}

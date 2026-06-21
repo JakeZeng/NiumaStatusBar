@@ -69,10 +69,9 @@ pub fn run() {
                 poller.start_all().await;
             });
 
-            // ===== 桌面端专属功能：托盘 + 快捷键 =====
+            // ===== 桌面端专属功能：快捷键 =====
             #[cfg(desktop)]
             {
-                use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
                 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
 
                 // 注册全局快捷键 Ctrl+Shift+M
@@ -84,25 +83,6 @@ pub fn run() {
                     .global_shortcut()
                     .register(shortcut)
                     .map_err(|e| format!("Failed to register shortcut: {}", e))?;
-
-                // 系统托盘
-                let _tray = tauri::tray::TrayIconBuilder::new()
-                    .tooltip("AI 模型监控")
-                    .on_tray_icon_event(|tray, event| {
-                        if let TrayIconEvent::Click {
-                            button: MouseButton::Left,
-                            button_state: MouseButtonState::Up,
-                            ..
-                        } = event
-                        {
-                            let app = tray.app_handle();
-                            if let Some(window) = app.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
-                        }
-                    })
-                    .build(app)?;
             }
 
             Ok(())
