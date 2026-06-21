@@ -46,6 +46,13 @@ const PROVIDER_PRESETS = [
     endpoint: '/chat/completions',
     method: 'POST',
   },
+  {
+    type: 'volcengine_token',
+    name: '火山方舟 Token Plan',
+    baseUrl: 'https://ark.cn-beijing.volces.com/api/coding/v3',
+    endpoint: '/chat/completions',
+    method: 'POST',
+  },
 ];
 
 interface Props {
@@ -82,8 +89,8 @@ export function ConfigModal({ isOpen, provider, onClose, onSave }: Props) {
         queryMethod: preset.method as 'GET' | 'POST',
       };
 
-      // 火山方舟 Coding Plan 需要 body 发起一次最小请求以触发响应头
-      if (preset.type === 'volcengine_coding') {
+      // 火山方舟 Coding Plan / Token Plan 需要 body 发起一次最小请求以触发响应头
+      if (preset.type === 'volcengine_coding' || preset.type === 'volcengine_token') {
         newForm.queryHeaders = {
           'Content-Type': 'application/json',
           'x-ark-customer': 'monitor-usage',

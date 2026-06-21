@@ -134,10 +134,31 @@ impl ProviderManager {
             }
         }
 
-        // 火山方舟 Coding Plan：注入最小 chat 请求体
-        if provider.provider == "volcengine_coding" {
+        // 火山方舟 / OpenAI 兼容 chat-completions 端点：注入最小 chat 请求体
+        // 触发服务端的 X-RateLimit-* 响应头（5h / week / month）
+        // 既匹配 provider 类型，也匹配 URL 路径（修复用户自定义时类型不匹配的问题）
+        let is_volc_coding = provider.provider == "volcengine_coding"
+            || provider.provider == "volcengine_token";
+        let is_chat_completions = url.contains("/chat/completions");
+        let is_ark_coding_endpoint = url.contains("/api/coding/v3");
+
+        if is_volc_coding || is_chat_completions || is_ark_coding_endpoint {
+            // 优先使用 provider.query_params 里的 model，否则用默认 model
+            let model = provider
+                .query_params
+                .get("model")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .or_else(|| {
+                    provider
+                        .query_headers
+                        .get("x-ark-model")
+                        .cloned()
+                })
+                .unwrap_or_else(|| "doubao-seed-code-1-0-260215".to_string());
+
             let minimal_body = serde_json::json!({
-                "model": "doubao-seed-2-0-lite-260215",
+                "model": model,
                 "messages": [{"role": "user", "content": "ping"}],
                 "max_tokens": 1,
                 "stream": false

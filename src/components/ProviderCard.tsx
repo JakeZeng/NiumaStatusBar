@@ -106,7 +106,8 @@ export function ProviderCard({ provider, onEdit }: Props) {
   const isCodingPlan = 
     provider.provider === 'minimax_coding' ||
     provider.provider === 'minimax_token' ||
-    provider.provider === 'volcengine_coding';
+    provider.provider === 'volcengine_coding' ||
+    provider.provider === 'volcengine_token';
 
   const hasQuota5h = status?.quota_5h_remaining !== null && status?.quota_5h_remaining !== undefined;
   const hasQuotaWeek = status?.quota_week_remaining !== null && status?.quota_week_remaining !== undefined;
