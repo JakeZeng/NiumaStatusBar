@@ -8,16 +8,16 @@ pub struct Database {
 }
 
 impl Database {
-    pub fn new() -> Result<Self> {
-        let db_path = Self::get_db_path()?;
-        
+    pub fn new(data_dir: PathBuf) -> Result<Self> {
+        let db_path = Self::get_db_path(&data_dir)?;
+
         // 确保目录存在
         if let Some(parent) = db_path.parent() {
             std::fs::create_dir_all(parent).ok();
         }
-        
+
         let conn = Connection::open(db_path)?;
-        
+
         // 创建 Provider 配置表
         conn.execute(
             "CREATE TABLE IF NOT EXISTS providers (
@@ -36,7 +36,7 @@ impl Database {
             )",
             [],
         )?;
-        
+
         // 创建使用历史表
         conn.execute(
             "CREATE TABLE IF NOT EXISTS usage_history (
@@ -54,28 +54,22 @@ impl Database {
             )",
             [],
         )?;
-        
+
         // 创建索引加速查询
         conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_usage_history_provider_time 
+            "CREATE INDEX IF NOT EXISTS idx_usage_history_provider_time
              ON usage_history(provider_id, timestamp DESC)",
             [],
         )?;
-        
+
         Ok(Self {
             conn: Mutex::new(conn),
         })
     }
-    
-    fn get_db_path() -> Result<PathBuf> {
-        let data_dir = dirs::data_dir()
-            .ok_or_else(|| rusqlite::Error::SqliteFailure(
-                rusqlite::ffi::Error::new(1),
-                Some("Failed to get data directory".to_string())
-            ))?
-            .join("ai-model-monitor");
-        
-        Ok(data_dir.join("data.db"))
+
+    fn get_db_path(data_dir: &PathBuf) -> Result<PathBuf> {
+        let dir = data_dir.join("ai-model-monitor");
+        Ok(dir.join("data.db"))
     }
     
     pub fn load_providers(&self) -> Result<Vec<ProviderConfig>> {

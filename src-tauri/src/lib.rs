@@ -46,8 +46,11 @@ pub fn run() {
 
     builder
         .setup(|app| {
-            // 初始化数据库
-            let db = Arc::new(storage::Database::new().expect("Failed to initialize database"));
+            // 初始化数据库 - 使用 Tauri 的 path API 获取跨平台数据目录
+            let app_data_dir = app.path().app_data_dir()
+                .expect("Failed to get app data directory");
+            let db = Arc::new(storage::Database::new(app_data_dir)
+                .expect("Failed to initialize database"));
 
             // 初始化 Provider 管理器
             let manager = Arc::new(ProviderManager::new());
