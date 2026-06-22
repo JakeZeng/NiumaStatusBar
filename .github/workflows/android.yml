@@ -175,8 +175,14 @@ jobs:
           node --version
           echo "=== tauri.js --version ==="
           node node_modules/@tauri-apps/cli/tauri.js --version
-          echo "=== build ==="
-          node node_modules/@tauri-apps/cli/tauri.js android build --apk 2>&1
+          echo "=== gradlew check ==="
+          cd src-tauri/gen/android
+          bash gradlew --version 2>&1 || true
+          echo "=== gradlew assembleRelease ==="
+          bash gradlew assembleRelease --stacktrace 2>&1 || true
+          echo "=== tauri build ==="
+          cd ../..
+          node node_modules/@tauri-apps/cli/tauri.js android build --apk 2>&1 || true
           echo "--- done ---"
         env:
           CI: 'true'
