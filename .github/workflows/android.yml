@@ -119,18 +119,25 @@ jobs:
         env:
           CI: 'true'
 
+      - name: Runner info
+        run: |
+          echo "uname=$(uname -a)"
+          echo "os-release:"
+          cat /etc/os-release 2>/dev/null || echo "no /etc/os-release"
+          echo "runner name: $RUNNER_NAME"
+          echo "runner os: $RUNNER_OS"
+          echo "PATH=$PATH"
+
       - name: Tauri Android build (apk)
         run: |
           echo "=== pnpm ==="
           pnpm --version
           echo "=== node ==="
           node --version
-          echo "=== tauri bin ==="
-          ls -la node_modules/@tauri-apps/cli/ 2>&1 | head -20
-          echo "=== tauri dist ==="
-          ls node_modules/@tauri-apps/cli/dist/ 2>&1 | head -10
-          echo "=== direct tauri binary ==="
-          node node_modules/@tauri-apps/cli/tauri.js --version 2>&1
+          echo "=== tauri bin (ls) ==="
+          ls node_modules/@tauri-apps/cli
+          echo "=== tauri.js --version ==="
+          node node_modules/@tauri-apps/cli/tauri.js --version
           echo "--- exit=$? ---"
           echo "=== build ==="
           node node_modules/@tauri-apps/cli/tauri.js android build --apk > /tmp/build.log 2>&1
