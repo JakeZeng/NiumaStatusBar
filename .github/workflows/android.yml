@@ -20,6 +20,7 @@ jobs:
     env:
       GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx4g"
       ANDROID_SDK_ROOT: ${{ github.workspace }}/.android-sdk
+      BASE_PATH: "/snap/bin:/home/runner/.local/bin:/opt/pipx_bin:/home/runner/.cargo/bin:/home/runner/.config/composer/vendor/bin:/usr/local/.ghcup/bin:/home/runner/.dotnet/tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
     steps:
       - name: DIAGNOSIS FIRST
@@ -172,7 +173,7 @@ jobs:
           pnpm --version
           echo "=== node ==="
           node --version
-          echo "=== tauri bin (ls) ==="
+          echo "=== tauri bin ==="
           ls node_modules/@tauri-apps/cli
           echo "=== tauri.js --version ==="
           node node_modules/@tauri-apps/cli/tauri.js --version
@@ -188,7 +189,7 @@ jobs:
           CI: 'true'
           ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
           ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
-          PATH: ${{ env.ANDROID_SDK_ROOT }}/cmdline-tools/latest/bin:${{ env.ANDROID_SDK_ROOT }}/platform-tools:${{ env.ANDROID_SDK_ROOT }}/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH
+          PATH: ${{ env.ANDROID_SDK_ROOT }}/cmdline-tools/latest/bin:${{ env.ANDROID_SDK_ROOT }}/platform-tools:${{ env.ANDROID_SDK_ROOT }}/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin:${{ env.BASE_PATH }}
           RUST_BACKTRACE: 'full'
 
       - name: List APKs
