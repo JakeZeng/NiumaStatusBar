@@ -19,8 +19,7 @@ jobs:
     timeout-minutes: 120
     env:
       GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx4g"
-      ANDROID_HOME: ${{ github.workspace }}/.android-sdk
-      ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
+      ANDROID_SDK_ROOT: ${{ github.workspace }}/.android-sdk
 
     steps:
       - name: Checkout
@@ -56,19 +55,18 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Install Android command-line tools (manual, robust)
+      - name: Install Android command-line tools
         run: |
           set -e
-          mkdir -p "$ANDROID_HOME/cmdline-tools"
-          cd "$ANDROID_HOME/cmdline-tools"
-          # Use a known-good older command-line tools version
+          SDK="$ANDROID_SDK_ROOT"
+          mkdir -p "$SDK/cmdline-tools"
+          cd "$SDK/cmdline-tools"
           TOOLS_VER="11076708"
           URL="https://dl.google.com/android/repository/commandlinetools-linux-${TOOLS_VER}_latest.zip"
           echo "Downloading $URL"
           curl -fsSL -o tools.zip "$URL"
           unzip -q tools.zip
           rm tools.zip
-          # The zip extracts into cmdline-tools/ — move contents up to "latest"
           if [ -d "cmdline-tools" ]; then
             mv cmdline-tools latest
           fi
@@ -77,19 +75,25 @@ jobs:
       - name: Accept Android licenses
         run: |
           set -e
-          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
+          export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$PATH"
           yes | sdkmanager --licenses > /dev/null
 
       - name: Install Android SDK components
         run: |
           set -e
-          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
+          export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$PATH"
           sdkmanager --install \
             "platform-tools" \
             "platforms;android-36" \
             "build-tools;36.0.0" \
             "ndk;27.0.12077973" \
             "cmake;3.22.1"
+
+      - name: Write local.properties (for Gradle)
+        run: |
+          mkdir -p src-tauri/gen/android
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > src-tauri/gen/android/local.properties
+          cat src-tauri/gen/android/local.properties
 
       - name: Cache Gradle / cargo
         uses: actions/cache@v4
@@ -118,9 +122,9 @@ jobs:
         run: pnpm tauri android build --apk
         env:
           CI: 'true'
-          ANDROID_HOME: ${{ env.ANDROID_HOME }}
-          ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
-          PATH: ${{ env.ANDROID_HOME }}/cmdline-tools/latest/bin:${{ env.ANDROID_HOME }}/platform-tools:${{ env.ANDROID_HOME }}/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH
+          ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
+          PATH: ${{ env.ANDROID_SDK_ROOT }}/cmdline-tools/latest/bin:${{ env.ANDROID_SDK_ROOT }}/platform-tools:${{ env.ANDROID_SDK_ROOT }}/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH
 
       - name: List APKs
         run: |
