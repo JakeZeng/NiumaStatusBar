@@ -192,8 +192,9 @@ jobs:
           RUST_BACKTRACE: 'full'
 
       - name: List APKs
+        shell: bash
         run: |
-          find src-tauri/gen/android/app/build/outputs/apk -name "*.apk" -type f -exec ls -lh {} \;
+          find src-tauri/gen/android/app/build/outputs/apk -name "*.apk" -type f -exec ls -lh {} \; 2>&1 || echo "No APKs found"
 
       - name: Upload APK (universal release)
         uses: actions/upload-artifact@v4
