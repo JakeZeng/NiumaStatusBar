@@ -203,13 +203,45 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-android-
 
+      - name: Locate pnpm (it was set up via corepack in an earlier step)
+        id: pnpm
+        shell: bash
+        run: |
+          set -e
+          # corepack installs pnpm under the user's cache. Search a few likely spots.
+          for p in \
+            "$HOME/.cache/node/corepack/v1/pnpm"/*/bin \
+            "$HOME/.local/share/pnpm" \
+            "/usr/local/bin" \
+            "/opt/pnpm/bin"; do
+            if [ -x "$p/pnpm" ] || [ -x "$p/pnpm.cjs" ]; then
+              echo "PNPM_BIN=$p" >> $GITHUB_OUTPUT
+              echo "Found pnpm at: $p"
+              "$p/pnpm" --version
+              exit 0
+            fi
+          done
+          # Fallback: try via corepack
+          if command -v corepack >/dev/null 2>&1; then
+            echo "PNPM_BIN=COREPACK" >> $GITHUB_OUTPUT
+            corepack pnpm --version
+            exit 0
+          fi
+          echo "FATAL: pnpm not found"
+          ls -la "$HOME/.cache/node/corepack/v1/pnpm/" 2>&1 || true
+          exit 1
+
       - name: Tauri Android build (apk) — direct gradle
         shell: bash
         run: |
           set -e
           export PATH="/opt/gradle/bin:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin:$BASE_PATH"
+          # Make pnpm available in this step
+          if [ "${{ steps.pnpm.outputs.PNPM_BIN }}" != "COREPACK" ] && [ -n "${{ steps.pnpm.outputs.PNPM_BIN }}" ]; then
+            export PATH="${{ steps.pnpm.outputs.PNPM_BIN }}:$PATH"
+          fi
           echo "=== versions ==="
-          pnpm --version
+          pnpm --version || echo "(pnpm not on PATH, OK — not needed for gradle build)"
           node --version
           /opt/gradle/bin/gradle --version
           echo "=== current wrapper props ==="
