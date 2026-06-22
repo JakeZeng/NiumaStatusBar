@@ -120,7 +120,12 @@ jobs:
           CI: 'true'
 
       - name: Tauri Android build (apk)
-        run: pnpm tauri android build --apk --verbose 2>&1 | tee /tmp/build.log; EXIT=${PIPESTATUS[0]}; echo "Tauri exit=$EXIT"; echo "--- last 200 lines ---"; tail -200 /tmp/build.log; exit $EXIT
+        run: |
+          set -o pipefail
+          pnpm tauri android build --apk --verbose > /tmp/build.log 2>&1
+          echo "Tauri exit=$?"
+          echo "--- last 200 lines ---"
+          tail -n 200 /tmp/build.log
         env:
           CI: 'true'
           ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
