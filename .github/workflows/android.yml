@@ -119,16 +119,30 @@ jobs:
         env:
           CI: 'true'
 
+      - name: Ensure coreutils
+        shell: bash
+        run: |
+          echo "PATH=$PATH"
+          command -v ls || echo "no ls"
+          command -v coreutils || echo "no coreutils"
+          echo "--- restoring coreutils via apt if missing ---"
+          apt-get update -y 2>&1 | tail -5 || true
+          apt-get install -y coreutils 2>&1 | tail -5 || true
+          ls --version
+          echo "--- restoring PATH explicitly ---"
+          echo 'export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"' >> $GITHUB_ENV
+
       - name: Runner info
+        shell: bash
         run: |
           echo "uname=$(uname -a)"
-          echo "os-release:"
           cat /etc/os-release 2>/dev/null || echo "no /etc/os-release"
           echo "runner name: $RUNNER_NAME"
           echo "runner os: $RUNNER_OS"
           echo "PATH=$PATH"
 
       - name: Tauri Android build (apk)
+        shell: bash
         run: |
           echo "=== pnpm ==="
           pnpm --version
