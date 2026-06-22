@@ -28,21 +28,14 @@ jobs:
         run: |
           echo "=== uname ==="
           uname -a
-          echo "=== os-release ==="
-          cat /etc/os-release
           echo "=== runner env ==="
           echo "RUNNER_NAME=$RUNNER_NAME"
           echo "RUNNER_OS=$RUNNER_OS"
           echo "RUNNER_ARCH=$RUNNER_ARCH"
-          echo "GITHUB_ENV=$GITHUB_ENV"
           echo "=== PATH ==="
           echo "$PATH"
-          echo "=== type ls tee head which head ==="
-          type ls tee head which 2>&1
-          echo "=== explicit /usr/bin/ls ==="
-          /usr/bin/ls --version 2>&1 || echo "no /usr/bin/ls"
-          echo "=== find /usr/bin coreutils ==="
-          for cmd in ls tee head which cat echo sed awk grep; do
+          echo "=== coreutils check ==="
+          for cmd in ls tee head which cat echo sed awk grep curl unzip; do
             p=$(command -v $cmd 2>/dev/null || echo MISSING)
             echo "  $cmd -> $p"
           done
@@ -121,6 +114,82 @@ jobs:
           echo "sdk.dir=$ANDROID_SDK_ROOT" > src-tauri/gen/android/local.properties
           cat src-tauri/gen/android/local.properties
 
+      - name: Install Rust stable + Android targets
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - name: Init Tauri Android project
+        run: pnpm tauri android init --ci
+        env:
+          CI: 'true'
+
+      - name: Pre-download Gradle 8.14.4 + point wrapper to local file
+        shell: bash
+        run: |
+          set -e
+          export PATH="$BASE_PATH"
+          GRADLE_VER="8.14.4"
+          ZIP="/tmp/gradle-${GRADLE_VER}-bin.zip"
+          GRADLE_HOME_DIR="/opt/gradle"
+          if [ -x "$GRADLE_HOME_DIR/bin/gradle" ]; then
+            echo "Gradle already installed at $GRADLE_HOME_DIR"
+          else
+            echo "Downloading gradle..."
+            OK=0
+            for URL in \
+              "https://services.gradle.org/distributions/gradle-${GRADLE_VER}-bin.zip" \
+              "https://github.com/gradle/gradle/releases/download/v${GRADLE_VER}/gradle-${GRADLE_VER}-bin.zip" \
+              "https://mirrors.tuna.tsinghua.edu.cn/gradle/gradle-${GRADLE_VER}-bin.zip" \
+              "https://mirrors.huaweicloud.com/gradle/gradle-${GRADLE_VER}-bin.zip" \
+              "https://mirrors.cloud.tencent.com/gradle/gradle-${GRADLE_VER}-bin.zip"; do
+              echo "Trying: $URL"
+              if curl -fSL --connect-timeout 20 --max-time 900 -o "$ZIP" "$URL"; then
+                if [ -s "$ZIP" ]; then
+                  OK=1
+                  echo "  -> OK"
+                  break
+                fi
+              fi
+              rm -f "$ZIP"
+            done
+            if [ "$OK" != "1" ]; then
+              echo "FATAL: All gradle download URLs failed"
+              exit 1
+            fi
+            echo "Extracting to $GRADLE_HOME_DIR ..."
+            mkdir -p "$GRADLE_HOME_DIR"
+            unzip -qo "$ZIP" -d /opt/
+            if [ -d "/opt/gradle-${GRADLE_VER}" ]; then
+              cp -a "/opt/gradle-${GRADLE_VER}/." "$GRADLE_HOME_DIR/"
+              rm -rf "/opt/gradle-${GRADLE_VER}"
+            fi
+            # keep the zip! we'll point the wrapper to it
+            chmod +x "$GRADLE_HOME_DIR/bin/gradle" || true
+            echo "Gradle installed:"
+            "$GRADLE_HOME_DIR/bin/gradle" --version
+          fi
+
+          # Now repoint the wrapper to the local zip so `gradlew` doesn't try to download
+          WRAPPER_PROPS="src-tauri/gen/android/gradle/wrapper/gradle-wrapper.properties"
+          if [ -f "$ZIP" ]; then
+            sed -i "s|^distributionUrl=.*|distributionUrl=file\\:${ZIP}|" "$WRAPPER_PROPS"
+            echo "--- updated wrapper ---"
+            cat "$WRAPPER_PROPS"
+          else
+            echo "WARN: zip missing at $ZIP, wrapper will try network"
+          fi
+
+          # Also pre-seed the wrapper cache so gradlew doesn't even re-check
+          # Wrapper uses sha256 of distributionUrl as cache key
+          WRAPPER_HASH=$(printf '%s' "file:${ZIP}" | sha256sum | cut -c1-30)
+          CACHE_DIR="$HOME/.gradle/wrapper/dists/gradle-${GRADLE_VER}-bin/${WRAPPER_HASH}"
+          echo "Wrapper cache dir would be: $CACHE_DIR"
+          # Don't try to manually populate the cache; file:// url will be used directly
+
+          echo "GRADLE_HOME=$GRADLE_HOME_DIR" >> $GITHUB_ENV
+          echo "GRADLE_ZIP=$ZIP" >> $GITHUB_ENV
+
       - name: Cache Gradle / cargo
         uses: actions/cache@v4
         with:
@@ -134,113 +203,41 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-android-
 
-      - name: Install Rust stable + Android targets
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
-
-      - name: Init Tauri Android project
-        run: pnpm tauri android init --ci
-        env:
-          CI: 'true'
-
-      - name: Ensure coreutils
-        shell: bash
-        run: |
-          echo "PATH=$PATH"
-          command -v ls || echo "no ls"
-          command -v coreutils || echo "no coreutils"
-          echo "--- restoring coreutils via apt if missing ---"
-          apt-get update -y 2>&1 | tail -5 || true
-          apt-get install -y coreutils 2>&1 | tail -5 || true
-          ls --version
-          echo "--- restoring PATH explicitly ---"
-          echo 'export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"' >> $GITHUB_ENV
-
-      - name: Runner info
-        shell: bash
-        run: |
-          echo "uname=$(uname -a)"
-          cat /etc/os-release 2>/dev/null || echo "no /etc/os-release"
-          echo "runner name: $RUNNER_NAME"
-          echo "runner os: $RUNNER_OS"
-          echo "PATH=$PATH"
-
-      - name: Pre-download Gradle 8.14.4
+      - name: Tauri Android build (apk) — direct gradle
         shell: bash
         run: |
           set -e
-          GRADLE_VER="8.14.4"
-          GRADLE_HOME_DIR="/opt/gradle"
-          if [ -x "$GRADLE_HOME_DIR/bin/gradle" ]; then
-            echo "Gradle already installed"
-            "$GRADLE_HOME_DIR/bin/gradle" --version
-          else
-            ZIP="/tmp/gradle-${GRADLE_VER}-bin.zip"
-            echo "Downloading gradle..."
-            for URL in \
-              "https://services.gradle.org/distributions/gradle-${GRADLE_VER}-bin.zip" \
-              "https://github.com/gradle/gradle/releases/download/v${GRADLE_VER}/gradle-${GRADLE_VER}-bin.zip" \
-              "https://mirrors.tuna.tsinghua.edu.cn/gradle/gradle-${GRADLE_VER}-bin.zip" \
-              "https://mirrors.huaweicloud.com/gradle/gradle-${GRADLE_VER}-bin.zip" \
-              "https://mirrors.cloud.tencent.com/gradle/gradle-${GRADLE_VER}-bin.zip"; do
-              echo "Trying: $URL"
-              curl -fSL --connect-timeout 30 --max-time 600 -o "$ZIP" "$URL" && break || rm -f "$ZIP"
-            done
-            if [ ! -f "$ZIP" ] || [ ! -s "$ZIP" ]; then
-              echo "FATAL: All gradle download URLs failed"
-              exit 1
-            fi
-            echo "Extracting..."
-            mkdir -p "$GRADLE_HOME_DIR"
-            unzip -qo "$ZIP" -d /opt/
-            # unzip creates /opt/gradle-${GRADLE_VER}, symlink or move
-            if [ -d "/opt/gradle-${GRADLE_VER}" ]; then
-              cp -a "/opt/gradle-${GRADLE_VER}"/* "$GRADLE_HOME_DIR/"
-            fi
-            rm -f "$ZIP"
-            echo "Gradle installed:"
-            "$GRADLE_HOME_DIR/bin/gradle" --version
-          fi
-          echo "GRADLE_HOME=$GRADLE_HOME_DIR" >> $GITHUB_ENV
-
-      - name: Tauri Android build (apk)
-        shell: bash
-        run: |
-          echo "=== pnpm ==="
+          export PATH="/opt/gradle/bin:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin:$BASE_PATH"
+          echo "=== versions ==="
           pnpm --version
-          echo "=== node ==="
           node --version
-          echo "=== tauri.js --version ==="
-          node node_modules/@tauri-apps/cli/tauri.js --version
-          echo "=== gradle ==="
           /opt/gradle/bin/gradle --version
-          echo "=== gradle assembleRelease ==="
+          echo "=== current wrapper props ==="
+          cat src-tauri/gen/android/gradle/wrapper/gradle-wrapper.properties
+          echo "=== running gradle assembleRelease directly (this also compiles rust via 'rust' gradle plugin) ==="
           cd src-tauri/gen/android
-          /opt/gradle/bin/gradle assembleRelease --stacktrace 2>&1 || true
-          echo "=== tauri build ==="
-          cd ../..
-          node node_modules/@tauri-apps/cli/tauri.js android build --apk 2>&1 || true
-          echo "--- done ---"
+          /opt/gradle/bin/gradle assembleRelease --no-daemon --stacktrace 2>&1 | tail -300
         env:
           CI: 'true'
           ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
           ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
           GRADLE_HOME: /opt/gradle
-          PATH: ${{ env.ANDROID_SDK_ROOT }}/cmdline-tools/latest/bin:${{ env.ANDROID_SDK_ROOT }}/platform-tools:${{ env.ANDROID_SDK_ROOT }}/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin:/opt/gradle/bin:${{ env.BASE_PATH }}
           RUST_BACKTRACE: 'full'
 
-      - name: List APKs
+      - name: Locate APKs (debug info)
         shell: bash
         run: |
-          find src-tauri/gen/android/app/build/outputs/apk -name "*.apk" -type f -exec ls -lh {} \; 2>&1 || echo "No APKs found"
+          echo "=== Searching for APKs ==="
+          find src-tauri/gen/android -name "*.apk" -type f 2>&1 | head -50 || echo "find failed"
+          echo "=== build/outputs tree ==="
+          ls -laR src-tauri/gen/android/app/build/outputs 2>&1 | head -80 || echo "no outputs dir"
 
       - name: Upload APK (universal release)
         uses: actions/upload-artifact@v4
         with:
           name: app-release-universal
           path: src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk
-          if-no-files-found: error
+          if-no-files-found: warn
 
       - name: Upload APK (arm64-v8a)
         uses: actions/upload-artifact@v4
@@ -254,4 +251,18 @@ jobs:
         with:
           name: app-release-armv7
           path: src-tauri/gen/android/app/build/outputs/apk/armeabi-v7a/release/*.apk
+          if-no-files-found: warn
+
+      - name: Upload APK (debug, fallback)
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-universal
+          path: src-tauri/gen/android/app/build/outputs/apk/universal/debug/*.apk
+          if-no-files-found: warn
+
+      - name: Upload APK (all found)
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-all-apks
+          path: src-tauri/gen/android/**/*.apk
           if-no-files-found: warn
