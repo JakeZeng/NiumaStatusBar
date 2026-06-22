@@ -166,6 +166,44 @@ jobs:
           echo "runner os: $RUNNER_OS"
           echo "PATH=$PATH"
 
+      - name: Pre-download Gradle 8.14.4
+        shell: bash
+        run: |
+          set -e
+          GRADLE_VER="8.14.4"
+          GRADLE_HOME_DIR="/opt/gradle"
+          if [ -x "$GRADLE_HOME_DIR/bin/gradle" ]; then
+            echo "Gradle already installed"
+            "$GRADLE_HOME_DIR/bin/gradle" --version
+          else
+            ZIP="/tmp/gradle-${GRADLE_VER}-bin.zip"
+            echo "Downloading gradle..."
+            for URL in \
+              "https://services.gradle.org/distributions/gradle-${GRADLE_VER}-bin.zip" \
+              "https://github.com/gradle/gradle/releases/download/v${GRADLE_VER}/gradle-${GRADLE_VER}-bin.zip" \
+              "https://mirrors.tuna.tsinghua.edu.cn/gradle/gradle-${GRADLE_VER}-bin.zip" \
+              "https://mirrors.huaweicloud.com/gradle/gradle-${GRADLE_VER}-bin.zip" \
+              "https://mirrors.cloud.tencent.com/gradle/gradle-${GRADLE_VER}-bin.zip"; do
+              echo "Trying: $URL"
+              curl -fSL --connect-timeout 30 --max-time 600 -o "$ZIP" "$URL" && break || rm -f "$ZIP"
+            done
+            if [ ! -f "$ZIP" ] || [ ! -s "$ZIP" ]; then
+              echo "FATAL: All gradle download URLs failed"
+              exit 1
+            fi
+            echo "Extracting..."
+            mkdir -p "$GRADLE_HOME_DIR"
+            unzip -qo "$ZIP" -d /opt/
+            # unzip creates /opt/gradle-${GRADLE_VER}, symlink or move
+            if [ -d "/opt/gradle-${GRADLE_VER}" ]; then
+              cp -a "/opt/gradle-${GRADLE_VER}"/* "$GRADLE_HOME_DIR/"
+            fi
+            rm -f "$ZIP"
+            echo "Gradle installed:"
+            "$GRADLE_HOME_DIR/bin/gradle" --version
+          fi
+          echo "GRADLE_HOME=$GRADLE_HOME_DIR" >> $GITHUB_ENV
+
       - name: Tauri Android build (apk)
         shell: bash
         run: |
@@ -175,11 +213,11 @@ jobs:
           node --version
           echo "=== tauri.js --version ==="
           node node_modules/@tauri-apps/cli/tauri.js --version
-          echo "=== gradlew check ==="
+          echo "=== gradle ==="
+          /opt/gradle/bin/gradle --version
+          echo "=== gradle assembleRelease ==="
           cd src-tauri/gen/android
-          bash gradlew --version 2>&1 || true
-          echo "=== gradlew assembleRelease ==="
-          bash gradlew assembleRelease --stacktrace 2>&1 || true
+          /opt/gradle/bin/gradle assembleRelease --stacktrace 2>&1 || true
           echo "=== tauri build ==="
           cd ../..
           node node_modules/@tauri-apps/cli/tauri.js android build --apk 2>&1 || true
@@ -188,7 +226,8 @@ jobs:
           CI: 'true'
           ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
           ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
-          PATH: ${{ env.ANDROID_SDK_ROOT }}/cmdline-tools/latest/bin:${{ env.ANDROID_SDK_ROOT }}/platform-tools:${{ env.ANDROID_SDK_ROOT }}/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin:${{ env.BASE_PATH }}
+          GRADLE_HOME: /opt/gradle
+          PATH: ${{ env.ANDROID_SDK_ROOT }}/cmdline-tools/latest/bin:${{ env.ANDROID_SDK_ROOT }}/platform-tools:${{ env.ANDROID_SDK_ROOT }}/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin:/opt/gradle/bin:${{ env.BASE_PATH }}
           RUST_BACKTRACE: 'full'
 
       - name: List APKs
