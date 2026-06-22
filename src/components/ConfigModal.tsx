@@ -95,8 +95,8 @@ export function ConfigModal({ isOpen, provider, onClose, onSave }: Props) {
           'Content-Type': 'application/json',
           'x-ark-customer': 'monitor-usage',
         };
-        newForm.queryParams = {};
-        // 火山方舟的查询需要 POST 一个最小 chat 请求，body 在后端固定注入
+        // 默认模型；用户可在下方"Model"输入框修改
+        newForm.queryParams = { model: 'doubao-seed-code-1-0-260215' };
       } else {
         newForm.queryHeaders = { 'Content-Type': 'application/json' };
         newForm.queryParams = {};
@@ -107,6 +107,15 @@ export function ConfigModal({ isOpen, provider, onClose, onSave }: Props) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    // 清理 queryParams：去掉空字符串字段
+    const cleanQueryParams: Record<string, string> = {};
+    if (form.queryParams) {
+      for (const [k, v] of Object.entries(form.queryParams)) {
+        if (typeof v === 'string' && v.trim() !== '') {
+          cleanQueryParams[k] = v;
+        }
+      }
+    }
     onSave({
       id: provider?.id || crypto.randomUUID(),
       name: form.name || '',
@@ -116,12 +125,14 @@ export function ConfigModal({ isOpen, provider, onClose, onSave }: Props) {
       queryEndpoint: form.queryEndpoint || '',
       queryMethod: form.queryMethod || 'GET',
       queryHeaders: form.queryHeaders || {},
-      queryParams: form.queryParams || {},
+      queryParams: cleanQueryParams,
       refreshInterval: form.refreshInterval || 60,
       isEnabled: form.isEnabled ?? true,
       status: 'active',
     });
   };
+
+  const isArkProvider = form.provider === 'volcengine_coding' || form.provider === 'volcengine_token';
 
   if (!isOpen) return null;
 
@@ -192,6 +203,30 @@ export function ConfigModal({ isOpen, provider, onClose, onSave }: Props) {
               <option value="POST">POST</option>
             </select>
           </div>
+
+          {/* 火山方舟：可手动调整 model */}
+          {isArkProvider && (
+            <div>
+              <label className="block text-sm font-medium mb-1 text-[var(--text-secondary)]">
+                Model
+                <span className="ml-2 text-xs text-[var(--text-muted)]">
+                  留空使用默认 doubao-seed-code-1-0-260215
+                </span>
+              </label>
+              <input
+                type="text"
+                value={(form.queryParams?.model as string) || ''}
+                onChange={e => setForm(f => ({
+                  ...f,
+                  queryParams: { ...(f.queryParams || {}), model: e.target.value }
+                }))}
+                placeholder="doubao-seed-code-1-0-260215"
+                className="w-full px-3 py-2 rounded-lg border border-[var(--border-color)] 
+                         bg-[var(--bg-secondary)] text-[var(--text-primary)]
+                         placeholder:text-[var(--text-muted)]"
+              />
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium mb-1 text-[var(--text-secondary)]">{t('provider.refreshInterval')}</label>

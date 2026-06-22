@@ -1,19 +1,21 @@
 import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { MoreVertical, Globe, Palette, Download, X } from 'lucide-react';
+import { MoreVertical, Globe, Palette, Download, X, Library, Plus } from 'lucide-react';
 import { themeManager, THEMES, type ThemeId } from '../themes/ThemeManager';
 import { ImportExport } from './ImportExport';
 
 interface Props {
+  onOpenHub?: () => void;
+  onOpenAddCustom?: () => void;
   onImportExport?: () => void;
 }
 
 /**
  * 移动端右上角"更多"菜单
- * 收纳：语言切换、主题切换、导入导出
- * 仅在 < md 屏幕下显示
+ * 收纳：供应商中心、自定义、导入导出、语言、主题
+ * 仅在 < sm 屏幕下显示
  */
-export function MobileMenu({ onImportExport }: Props) {
+export function MobileMenu({ onOpenHub, onOpenAddCustom, onImportExport }: Props) {
   const { i18n } = useTranslation();
   const [open, setOpen] = useState(false);
   const [subPage, setSubPage] = useState<'main' | 'theme' | 'language' | 'io'>('main');
@@ -49,31 +51,65 @@ export function MobileMenu({ onImportExport }: Props) {
     close();
   };
 
+  const handleHub = () => {
+    onOpenHub?.();
+    close();
+  };
+
+  const handleAddCustom = () => {
+    onOpenAddCustom?.();
+    close();
+  };
+
   const currentLang = i18n.language || 'zh';
 
   return (
-    <div className="md:hidden relative" ref={ref}>
+    <div className="sm:hidden relative" ref={ref}>
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-lg
+        className="flex items-center justify-center w-9 h-9 rounded-lg
                  bg-[var(--bg-card)] border border-[var(--border-color)]
                  text-[var(--text-primary)]
-                 hover:border-[var(--color-primary)] transition-all"
+                 hover:border-[var(--color-primary)] active:scale-95 transition-all"
         title="更多"
+        aria-label="更多"
       >
         {open ? <X className="w-4 h-4" /> : <MoreVertical className="w-4 h-4" />}
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-60 rounded-xl
+        <div className="absolute right-0 mt-2 w-64 rounded-xl
                         bg-[var(--bg-card)] border border-[var(--border-color)]
-                        shadow-2xl backdrop-blur-lg z-50 overflow-hidden">
+                        shadow-2xl backdrop-blur-lg z-50 overflow-hidden
+                        max-h-[80vh] overflow-y-auto">
           {subPage === 'main' && (
             <div className="py-1">
               <button
+                onClick={handleHub}
+                className="w-full flex items-center gap-3 px-4 py-3
+                         hover:bg-[var(--bg-overlay)] active:bg-[var(--bg-overlay)]
+                         transition-colors text-left
+                         text-[var(--text-primary)]"
+              >
+                <Library className="w-4 h-4 text-[var(--color-primary)]" />
+                <span className="text-sm flex-1">供应商中心</span>
+              </button>
+              <button
+                onClick={handleAddCustom}
+                className="w-full flex items-center gap-3 px-4 py-3
+                         hover:bg-[var(--bg-overlay)] active:bg-[var(--bg-overlay)]
+                         transition-colors text-left
+                         text-[var(--text-primary)]"
+              >
+                <Plus className="w-4 h-4 text-[var(--color-primary)]" />
+                <span className="text-sm flex-1">自定义 Provider</span>
+              </button>
+              <div className="my-1 border-t border-[var(--border-color)]/50" />
+              <button
                 onClick={() => setSubPage('language')}
                 className="w-full flex items-center gap-3 px-4 py-3
-                         hover:bg-[var(--bg-overlay)] transition-colors text-left
+                         hover:bg-[var(--bg-overlay)] active:bg-[var(--bg-overlay)]
+                         transition-colors text-left
                          text-[var(--text-primary)]"
               >
                 <Globe className="w-4 h-4 text-[var(--color-primary)]" />
@@ -85,7 +121,8 @@ export function MobileMenu({ onImportExport }: Props) {
               <button
                 onClick={() => setSubPage('theme')}
                 className="w-full flex items-center gap-3 px-4 py-3
-                         hover:bg-[var(--bg-overlay)] transition-colors text-left
+                         hover:bg-[var(--bg-overlay)] active:bg-[var(--bg-overlay)]
+                         transition-colors text-left
                          text-[var(--text-primary)]"
               >
                 <Palette className="w-4 h-4 text-[var(--color-primary)]" />
@@ -97,7 +134,8 @@ export function MobileMenu({ onImportExport }: Props) {
               <button
                 onClick={() => setSubPage('io')}
                 className="w-full flex items-center gap-3 px-4 py-3
-                         hover:bg-[var(--bg-overlay)] transition-colors text-left
+                         hover:bg-[var(--bg-overlay)] active:bg-[var(--bg-overlay)]
+                         transition-colors text-left
                          text-[var(--text-primary)]"
               >
                 <Download className="w-4 h-4 text-[var(--color-primary)]" />
@@ -111,7 +149,8 @@ export function MobileMenu({ onImportExport }: Props) {
               <button
                 onClick={() => handleLanguageSelect('zh')}
                 className={`w-full flex items-center gap-3 px-4 py-3
-                          hover:bg-[var(--bg-overlay)] transition-colors text-left
+                          hover:bg-[var(--bg-overlay)] active:bg-[var(--bg-overlay)]
+                          transition-colors text-left
                           ${currentLang === 'zh' ? 'bg-[var(--bg-overlay)]' : ''}
                           text-[var(--text-primary)]`}
               >
@@ -124,7 +163,8 @@ export function MobileMenu({ onImportExport }: Props) {
               <button
                 onClick={() => handleLanguageSelect('en')}
                 className={`w-full flex items-center gap-3 px-4 py-3
-                          hover:bg-[var(--bg-overlay)] transition-colors text-left
+                          hover:bg-[var(--bg-overlay)] active:bg-[var(--bg-overlay)]
+                          transition-colors text-left
                           ${currentLang === 'en' ? 'bg-[var(--bg-overlay)]' : ''}
                           text-[var(--text-primary)]`}
               >
@@ -144,7 +184,8 @@ export function MobileMenu({ onImportExport }: Props) {
                   key={theme.id}
                   onClick={() => handleThemeSelect(theme.id)}
                   className={`w-full flex items-center gap-3 px-4 py-3
-                            hover:bg-[var(--bg-overlay)] transition-colors text-left
+                            hover:bg-[var(--bg-overlay)] active:bg-[var(--bg-overlay)]
+                            transition-colors text-left
                             ${currentTheme === theme.id ? 'bg-[var(--bg-overlay)]' : ''}
                             text-[var(--text-primary)]`}
                 >
@@ -180,7 +221,10 @@ function SubPage({ title, onBack, children }: { title: string; onBack: () => voi
   return (
     <div>
       <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--border-color)]">
-        <button onClick={onBack} className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-sm">
+        <button
+          onClick={onBack}
+          className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] active:text-[var(--text-primary)] text-sm px-2 py-1 -ml-2 rounded"
+        >
           ← 返回
         </button>
         <span className="text-sm font-medium text-[var(--text-primary)] ml-auto">{title}</span>

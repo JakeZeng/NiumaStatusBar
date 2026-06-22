@@ -63,42 +63,52 @@ export default function App() {
 
   const selectedProviderName = providers.find(p => p.id === selectedProvider)?.name || '';
 
+  // 供 MobileMenu 调用的统一打开入口
+  const openHub = () => setHubOpen(true);
+  const openAddCustom = () => {
+    setEditing(null);
+    setModalOpen(true);
+  };
+
   return (
     <div className="min-h-screen text-[var(--text-primary)]">
       <ThemedBackground theme={theme} />
 
       <header className="sticky top-0 z-40 backdrop-blur-md
-                        bg-[var(--bg-card)]/80 border-b border-[var(--border-color)]">
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2.5 sm:py-4 flex items-center justify-between gap-2">
-          <h1 className="text-base sm:text-xl md:text-2xl font-bold bg-gradient-to-r
+                        bg-[var(--bg-card)]/80 border-b border-[var(--border-color)]
+                        safe-top">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2 sm:py-3
+                        flex items-center justify-between gap-2">
+          <h1 className="text-sm sm:text-xl md:text-2xl font-bold bg-gradient-to-r
                         from-[var(--color-primary)] to-[var(--color-secondary)]
-                        bg-clip-text text-transparent truncate">
+                        bg-clip-text text-transparent truncate min-w-0 flex-1">
             {t('app.title')}
           </h1>
-          <div className="flex items-center gap-1 sm:gap-2">
+          <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+            {/* 桌面端：完整功能按钮 */}
             <div className="hidden sm:block">
               <ImportExport onProvidersUpdated={handleProvidersUpdated} />
             </div>
             <button
-              onClick={() => setHubOpen(true)}
-              className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg
+              onClick={openHub}
+              className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-lg
                        bg-[var(--bg-card)] border border-[var(--border-color)]
                        text-[var(--text-primary)]
                        hover:border-[var(--color-primary)] hover:shadow-[var(--glow-primary)]
-                       transition-all text-xs sm:text-sm"
+                       transition-all text-sm"
               title="从预置目录添加"
             >
-              <Library className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span className="hidden sm:inline">供应商中心</span>
+              <Library className="w-4 h-4" />
+              <span>供应商中心</span>
             </button>
             <button
-              onClick={() => { setEditing(null); setModalOpen(true); }}
-              className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-lg
+              onClick={openAddCustom}
+              className="hidden sm:flex items-center gap-1.5 px-4 py-2 rounded-lg
                        bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-secondary)]
-                       text-white font-medium hover:shadow-[var(--glow-primary)] transition-all text-xs sm:text-sm"
+                       text-white font-medium hover:shadow-[var(--glow-primary)] transition-all text-sm"
             >
-              <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span className="hidden sm:inline">自定义</span>
+              <Plus className="w-4 h-4" />
+              <span>自定义</span>
             </button>
             <div className="hidden md:block">
               <LanguageSwitcher />
@@ -106,15 +116,20 @@ export default function App() {
             <div className="hidden md:block">
               <ThemeSwitcher />
             </div>
-            {/* 移动端：更多菜单按钮 */}
-            <MobileMenu onImportExport={() => {/* 通过 hub 间接处理 */}} />
+            {/* 移动端：收纳"供应商中心/自定义/导入导出/语言/主题" */}
+            <MobileMenu
+              onOpenHub={openHub}
+              onOpenAddCustom={openAddCustom}
+              onImportExport={() => { /* 由 hub 间接管理 */ }}
+            />
           </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-8 space-y-4 sm:space-y-8">
         {providers.length > 0 && (
-          <div className="flex gap-1.5 sm:gap-2 overflow-x-auto pb-2 -mx-1 px-1">
+          <div className="flex gap-1.5 sm:gap-2 overflow-x-auto pb-2 -mx-1 px-1
+                          scrollbar-thin">
             {providers.map(provider => (
               <button
                 key={provider.id}
@@ -146,7 +161,7 @@ export default function App() {
               点击"供应商中心"选择预设并填入 API Key 开始配置
             </p>
             <button
-              onClick={() => setHubOpen(true)}
+              onClick={openHub}
               className="mt-6 inline-flex items-center gap-2 px-5 sm:px-6 py-2.5 sm:py-3 rounded-lg
                        bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-secondary)]
                        text-white font-medium hover:shadow-[var(--glow-primary)] transition-all text-sm sm:text-base"
@@ -167,6 +182,24 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* 移动端悬浮按钮：仅在有 provider 时显示 "添加"，避免遮盖"打开供应商中心"引导 */}
+      {providers.length > 0 && (
+        <button
+          onClick={openAddCustom}
+          className="sm:hidden fixed bottom-5 right-5 z-30
+                   w-14 h-14 rounded-full
+                   bg-gradient-to-br from-[var(--color-primary)] to-[var(--color-secondary)]
+                   text-white shadow-[var(--glow-primary)]
+                   flex items-center justify-center
+                   active:scale-95 transition-transform
+                   safe-bottom"
+          title="自定义 Provider"
+          aria-label="添加自定义 Provider"
+        >
+          <Plus className="w-6 h-6" />
+        </button>
+      )}
 
       <ConfigModal
         isOpen={modalOpen}

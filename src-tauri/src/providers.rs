@@ -126,23 +126,42 @@ impl ProviderManager {
             request = request.header(key.as_str(), value.as_str());
         }
 
+        // 把 query_params 中的 model 项从 URL 查询串里剥离出来（避免 `?model=...` 出现在 URL 上）
+        // 同时收集剩余的 query 项
+        let mut extra_query: Vec<(String, String)> = Vec::new();
         if let Some(params) = provider.query_params.as_object() {
             for (key, value) in params {
+                if key == "model" { continue; }
                 if let Some(s) = value.as_str() {
-                    request = request.query(&[(key, s)]);
+                    extra_query.push((key.clone(), s.to_string()));
                 }
             }
+        }
+        for (k, v) in &extra_query {
+            request = request.query(&[(k.as_str(), v.as_str())]);
         }
 
         // 火山方舟 / OpenAI 兼容 chat-completions 端点：注入最小 chat 请求体
         // 触发服务端的 X-RateLimit-* 响应头（5h / week / month）
         // 既匹配 provider 类型，也匹配 URL 路径（修复用户自定义时类型不匹配的问题）
+        let url_lower = url.to_lowercase();
         let is_volc_coding = provider.provider == "volcengine_coding"
             || provider.provider == "volcengine_token";
-        let is_chat_completions = url.contains("/chat/completions");
-        let is_ark_coding_endpoint = url.contains("/api/coding/v3");
+        let is_chat_completions = url_lower.contains("/chat/completions");
+        let is_ark_coding_endpoint = url_lower.contains("/api/coding/v3");
+        let is_ark_cn_host = url_lower.contains("ark.cn-beijing.volces.com")
+            || url_lower.contains("ark.volces.com");
+        let is_ark_endpoint = is_ark_cn_host
+            || url_lower.contains("volces.com/api/")
+            || is_ark_coding_endpoint;
+        let is_post = provider.query_method == "POST";
 
-        if is_volc_coding || is_chat_completions || is_ark_coding_endpoint {
+        // 需要注入 body 的条件：方法为 POST + 命中任一 Ark/chat-completions 端点
+        // 修复：之前仅在 provider.type 匹配时注入，对"自定义"但 URL 指向 Ark 的情况漏判
+        let needs_body = is_post
+            && (is_volc_coding || is_chat_completions || is_ark_endpoint);
+
+        if needs_body {
             // 优先使用 provider.query_params 里的 model，否则用默认 model
             let model = provider
                 .query_params
@@ -164,6 +183,16 @@ impl ProviderManager {
                 "stream": false
             });
             request = request.json(&minimal_body);
+            eprintln!(
+                "[providers] 注入 body: provider={}, url={}, model={}",
+                provider.provider, url, model
+            );
+        } else if is_post && (is_chat_completions || is_ark_endpoint) {
+            // 防御性日志：命中 Ark URL 但没注入 body（理论上前一个分支已覆盖）
+            eprintln!(
+                "[providers] 警告：POST 命中 Ark/chat-completions 但未注入 body。provider={}, url={}",
+                provider.provider, url
+            );
         }
 
         let response = request.send().await.map_err(|e| e.to_string())?;

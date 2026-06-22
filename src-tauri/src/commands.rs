@@ -141,8 +141,14 @@ pub async fn enable_preset(
         query_endpoint: preset.query_endpoint.clone(),
         query_method: preset.query_method.clone(),
         query_headers: preset.default_headers.clone(),
-        query_params: serde_json::Value::Null,
-        refresh_interval: refresh_interval.unwrap_or(preset.default_refresh_interval),
+        // 把 model 作为 query_params 注入，便于"火山方舟"读取
+        // 也方便用户在自定义 modal 里直接修改
+        query_params: preset
+            .default_model
+            .as_ref()
+            .map(|m| serde_json::json!({ "model": m }))
+            .unwrap_or(serde_json::Value::Null),
+        refresh_interval: preset.default_refresh_interval,
         is_enabled: true,
         status: "active".to_string(),
     };
