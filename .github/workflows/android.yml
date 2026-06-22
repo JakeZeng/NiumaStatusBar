@@ -120,12 +120,13 @@ jobs:
           CI: 'true'
 
       - name: Tauri Android build (apk)
-        run: pnpm tauri android build --apk
+        run: pnpm tauri android build --apk --verbose 2>&1 | tee /tmp/build.log; EXIT=${PIPESTATUS[0]}; echo "Tauri exit=$EXIT"; echo "--- last 200 lines ---"; tail -200 /tmp/build.log; exit $EXIT
         env:
           CI: 'true'
           ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
           ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
           PATH: ${{ env.ANDROID_SDK_ROOT }}/cmdline-tools/latest/bin:${{ env.ANDROID_SDK_ROOT }}/platform-tools:${{ env.ANDROID_SDK_ROOT }}/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH
+          RUST_BACKTRACE: 'full'
 
       - name: List APKs
         run: |
