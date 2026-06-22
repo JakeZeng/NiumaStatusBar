@@ -176,7 +176,7 @@ jobs:
           echo "=== tauri.js --version ==="
           node node_modules/@tauri-apps/cli/tauri.js --version
           echo "=== build ==="
-          node node_modules/@tauri-apps/cli/tauri.js android build --apk 2>&1 || true
+          node node_modules/@tauri-apps/cli/tauri.js android build --apk 2>&1
           echo "--- done ---"
         env:
           CI: 'true'
