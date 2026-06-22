@@ -11,7 +11,6 @@ on:
       - 'src-tauri/**'
       - 'package.json'
       - 'pnpm-lock.yaml'
-      - 'package-lock.json'
       - '.github/workflows/android.yml'
 
 jobs:
@@ -20,6 +19,8 @@ jobs:
     timeout-minutes: 120
     env:
       GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx4g"
+      ANDROID_HOME: ${{ github.workspace }}/.android-sdk
+      ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
 
     steps:
       - name: Checkout
@@ -39,7 +40,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.local/share/pnpm/store
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml', '**/package-lock.json') }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-pnpm-
 
@@ -55,15 +56,40 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: |
-            platform-tools
-            platforms;android-36
-            build-tools;36.0.0
-            ndk;27.0.12077973
-            cmake;3.22.1
+      - name: Install Android command-line tools (manual, robust)
+        run: |
+          set -e
+          mkdir -p "$ANDROID_HOME/cmdline-tools"
+          cd "$ANDROID_HOME/cmdline-tools"
+          # Use a known-good older command-line tools version
+          TOOLS_VER="11076708"
+          URL="https://dl.google.com/android/repository/commandlinetools-linux-${TOOLS_VER}_latest.zip"
+          echo "Downloading $URL"
+          curl -fsSL -o tools.zip "$URL"
+          unzip -q tools.zip
+          rm tools.zip
+          # The zip extracts into cmdline-tools/ — move contents up to "latest"
+          if [ -d "cmdline-tools" ]; then
+            mv cmdline-tools latest
+          fi
+          ls -la latest/bin/ | head
+
+      - name: Accept Android licenses
+        run: |
+          set -e
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
+          yes | sdkmanager --licenses > /dev/null
+
+      - name: Install Android SDK components
+        run: |
+          set -e
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0" \
+            "ndk;27.0.12077973" \
+            "cmake;3.22.1"
 
       - name: Cache Gradle / cargo
         uses: actions/cache@v4
@@ -92,6 +118,9 @@ jobs:
         run: pnpm tauri android build --apk
         env:
           CI: 'true'
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
+          PATH: ${{ env.ANDROID_HOME }}/cmdline-tools/latest/bin:${{ env.ANDROID_HOME }}/platform-tools:${{ env.ANDROID_HOME }}/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH
 
       - name: List APKs
         run: |
