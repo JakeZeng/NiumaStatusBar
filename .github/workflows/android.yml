@@ -119,10 +119,19 @@ jobs:
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
 
-      - name: Init Tauri Android project
-        run: pnpm tauri android init --ci
-        env:
-          CI: 'true'
+      - name: Init Tauri Android project (force regenerate)
+        run: |
+          set -e
+          export ANDROID_HOME="$ANDROID_SDK_ROOT"
+          export ANDROID_SDK_ROOT="$ANDROID_SDK_ROOT"
+          export NDK_HOME="$ANDROID_SDK_ROOT/ndk/27.0.12077973"
+          # Preserve anything the user committed under gen/android that init wouldn't recreate,
+          # then nuke the rest and let init scaffold fresh (this also regenerates the
+          # gitignored tauri.settings.gradle + tauri.build.gradle.kts that gradle needs).
+          cd src-tauri
+          rm -rf gen/android
+          cd ..
+          pnpm tauri android init --ci
 
       - name: Pre-download Gradle 8.14.4 + point wrapper to local file
         shell: bash
