@@ -22,6 +22,30 @@ jobs:
       ANDROID_SDK_ROOT: ${{ github.workspace }}/.android-sdk
 
     steps:
+      - name: DIAGNOSIS FIRST
+        shell: bash --noprofile --norc -eo pipefail {0}
+        run: |
+          echo "=== uname ==="
+          uname -a
+          echo "=== os-release ==="
+          cat /etc/os-release
+          echo "=== runner env ==="
+          echo "RUNNER_NAME=$RUNNER_NAME"
+          echo "RUNNER_OS=$RUNNER_OS"
+          echo "RUNNER_ARCH=$RUNNER_ARCH"
+          echo "GITHUB_ENV=$GITHUB_ENV"
+          echo "=== PATH ==="
+          echo "$PATH"
+          echo "=== type ls tee head which head ==="
+          type ls tee head which 2>&1
+          echo "=== explicit /usr/bin/ls ==="
+          /usr/bin/ls --version 2>&1 || echo "no /usr/bin/ls"
+          echo "=== find /usr/bin coreutils ==="
+          for cmd in ls tee head which cat echo sed awk grep; do
+            p=$(command -v $cmd 2>/dev/null || echo MISSING)
+            echo "  $cmd -> $p"
+          done
+
       - name: Checkout
         uses: actions/checkout@v4
 
