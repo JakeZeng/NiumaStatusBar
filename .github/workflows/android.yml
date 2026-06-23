@@ -150,6 +150,79 @@ jobs:
           echo "--- final state ---"
           ls -la "$ROOT/tauri.settings.gradle" "$ROOT/app/tauri.build.gradle.kts"
 
+      - name: Patch BuildTask to bypass tauri-cli android-studio-script
+        run: |
+          set -e
+          # tauri-cli 2.11.x's 'android-studio-script' panics in release builds:
+          #   "failed to read missing addr file /tmp/<id>-server-addr"
+          # 'tauri android init' just regenerated the original BuildTask.kt, so we
+          # overwrite it again to call cargo directly.
+          BUILDTASK=src-tauri/gen/android/buildSrc/src/main/java/com/aimonitor/app/kotlin/BuildTask.kt
+          cat > "$BUILDTASK" <<'EOF'
+          import java.io.File
+          import org.apache.tools.ant.taskdefs.condition.Os
+          import org.gradle.api.DefaultTask
+          import org.gradle.api.GradleException
+          import org.gradle.api.logging.LogLevel
+          import org.gradle.api.tasks.Input
+          import org.gradle.api.tasks.TaskAction
+
+          open class BuildTask : DefaultTask() {
+              @Input
+              var rootDirRel: String? = null
+              @Input
+              var target: String? = null
+              @Input
+              var release: Boolean? = null
+
+              @TaskAction
+              fun assemble() {
+                  val rootDirRel = rootDirRel ?: throw GradleException("rootDirRel cannot be null")
+                  val target = target ?: throw GradleException("target cannot be null")
+                  val release = release ?: throw GradleException("release cannot be null")
+                  val rootDir = File(project.projectDir, rootDirRel)
+
+                  val cargo = if (Os.isFamily(Os.FAMILY_WINDOWS)) "cargo.exe" else "cargo"
+                  val profile = if (release) "release" else "debug"
+                  project.exec {
+                      workingDir(rootDir)
+                      executable(cargo)
+                      args("build", "--target", target, "--profile", profile)
+                      if (project.logger.isEnabled(LogLevel.DEBUG)) args("-vv")
+                      else if (project.logger.isEnabled(LogLevel.INFO)) args("-v")
+                      environment("CARGO_TERM_COLOR", "always")
+                  }.assertNormalExitValue()
+
+                  val soName = "lib${rootDir.name}.so"
+                  val abi = when (target) {
+                      "aarch64-linux-android" -> "arm64-v8a"
+                      "armv7-linux-androideabi" -> "armeabi-v7a"
+                      "i686-linux-android" -> "x86"
+                      "x86_64-linux-android" -> "x86_64"
+                      else -> target
+                  }
+                  val srcSo = File(rootDir, "target/$target/$profile/$soName")
+                  val fallback = File(rootDir, "target/$target/$profile/libapp.so")
+                  val srcFinal = when {
+                      srcSo.exists() -> srcSo
+                      fallback.exists() -> fallback
+                      else -> throw GradleException("Built .so not found at $srcSo or $fallback")
+                  }
+                  val dstDir = File(project.projectDir, "src/main/jniLibs/$abi")
+                  if (!dstDir.exists()) dstDir.mkdirs()
+                  val dstSo = File(dstDir, soName)
+                  srcFinal.copyTo(dstSo, overwrite = true)
+                  project.logger.lifecycle("Copied $srcFinal -> $dstSo")
+              }
+          }
+          EOF
+          echo "--- patched BuildTask.kt ---"
+          head -10 "$BUILDTASK"
+          # Nuke buildSrc compile cache so our patched task is recompiled
+          rm -rf .gradle buildSrc/build buildSrc/.gradle 2>/dev/null || true
+          # Also bust the parent project's caches that might reference the old BuildTask
+          rm -rf /home/runner/.gradle/caches/build-cache-* 2>/dev/null || true
+
       - name: Pre-download Gradle 8.14.4 + point wrapper to local file
         shell: bash
         run: |
