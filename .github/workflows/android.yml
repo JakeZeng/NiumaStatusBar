@@ -193,14 +193,26 @@ jobs:
                       "x86_64" -> "x86_64-linux-android"
                       else -> target
                   }
-                  project.exec {
+                  // Run cargo, capture full output so linker errors are visible
+                  val cargoLog = File(rootDir, "target/cargo-build-$targetTriple-$profile.log")
+                  cargoLog.parentFile.mkdirs()
+                  val cargoResult = project.exec {
                       workingDir(rootDir)
                       executable(cargo)
                       args("build", "--target", targetTriple, "--profile", profile)
-                      if (project.logger.isEnabled(LogLevel.DEBUG)) args("-vv")
-                      else if (project.logger.isEnabled(LogLevel.INFO)) args("-v")
-                      environment("CARGO_TERM_COLOR", "always")
-                  }.assertNormalExitValue()
+                      args("--verbose")  // surface linker commands and full error context
+                      environment("CARGO_TERM_COLOR", "never")
+                      isIgnoreExitValue = true
+                  }
+                  if (cargoResult.exitValue != 0) {
+                      // Dump last 200 lines of cargo log for debugging
+                      if (cargoLog.exists()) {
+                          val tail = cargoLog.readLines().takeLast(200).joinToString("\n")
+                          throw GradleException("cargo build failed for $targetTriple/$profile.\n\nLast 200 lines of cargo log:\n$tail")
+                      } else {
+                          throw GradleException("cargo build failed for $targetTriple/$profile (exit ${cargoResult.exitValue})")
+                      }
+                  }
 
                   val soName = "lib${rootDir.name}.so"
                   val abi = when (targetTriple) {
@@ -403,3 +415,10 @@ jobs:
           name: app-all-apks
           path: src-tauri/gen/android/**/*.apk
           if-no-files-found: warn
+
+      - name: Upload cargo build log (for debugging linker errors)
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-build-log
+          path: src-tauri/target/cargo-build-*.log
+          if-no-files-found: ignore
