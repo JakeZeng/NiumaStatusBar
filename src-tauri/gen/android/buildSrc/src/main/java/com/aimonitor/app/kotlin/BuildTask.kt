@@ -16,53 +16,56 @@ open class BuildTask : DefaultTask() {
 
     @TaskAction
     fun assemble() {
-        val executable = """pnpm""";
-        try {
-            runTauriCli(executable)
-        } catch (e: Exception) {
-            if (Os.isFamily(Os.FAMILY_WINDOWS)) {
-                // Try different Windows-specific extensions
-                val fallbacks = listOf(
-                    "$executable.exe",
-                    "$executable.cmd",
-                    "$executable.bat",
-                )
-                
-                var lastException: Exception = e
-                for (fallback in fallbacks) {
-                    try {
-                        runTauriCli(fallback)
-                        return
-                    } catch (fallbackException: Exception) {
-                        lastException = fallbackException
-                    }
-                }
-                throw lastException
-            } else {
-                throw e;
-            }
-        }
-    }
-
-    fun runTauriCli(executable: String) {
         val rootDirRel = rootDirRel ?: throw GradleException("rootDirRel cannot be null")
         val target = target ?: throw GradleException("target cannot be null")
         val release = release ?: throw GradleException("release cannot be null")
-        val args = listOf("tauri", "android", "android-studio-script");
+
+        val rootDir = File(project.projectDir, rootDirRel)
+
+        // 1. Run cargo build directly (bypass tauri-cli android-studio-script which panics on server-addr)
+        val cargo = if (Os.isFamily(Os.FAMILY_WINDOWS)) "cargo.exe" else "cargo"
+        val profile = if (release) "release" else "debug"
+        val cargoArgs = mutableListOf("build", "--target", target, "--profile", profile)
 
         project.exec {
-            workingDir(File(project.projectDir, rootDirRel))
-            executable(executable)
-            args(args)
+            workingDir(rootDir)
+            executable(cargo)
+            args(cargoArgs)
             if (project.logger.isEnabled(LogLevel.DEBUG)) {
                 args("-vv")
             } else if (project.logger.isEnabled(LogLevel.INFO)) {
                 args("-v")
             }
-            if (release) {
-                args("--release")
-            }
-            args(listOf("--target", target))
+            environment("CARGO_TERM_COLOR", "always")
         }.assertNormalExitValue()
+
+        // 2. Copy the built .so into the Android project so the APK packager finds it
+        val soName = "lib${rootDir.name}.so"
+        val abi = when (target) {
+            "aarch64-linux-android" -> "arm64-v8a"
+            "armv7-linux-androideabi" -> "armeabi-v7a"
+            "i686-linux-android" -> "x86"
+            "x86_64-linux-android" -> "x86_64"
+            else -> target
+        }
+        val srcSo = File(rootDir, "target/$target/$profile/$soName")
+        val dstDir = File(project.projectDir, "src/main/jniLibs/$abi")
+        if (!dstDir.exists()) {
+            dstDir.mkdirs()
+        }
+        val dstSo = File(dstDir, soName)
+        if (srcSo.exists()) {
+            srcSo.copyTo(dstSo, overwrite = true)
+            project.logger.lifecycle("Copied $srcSo -> $dstSo")
+        } else {
+            // Fallback: try libapp.so (tauri default lib name)
+            val fallbackSo = File(rootDir, "target/$target/$profile/libapp.so")
+            if (fallbackSo.exists()) {
+                fallbackSo.copyTo(dstSo, overwrite = true)
+                project.logger.lifecycle("Copied $fallbackSo -> $dstSo")
+            } else {
+                throw GradleException("Built .so not found at $srcSo or $fallbackSo")
+            }
+        }
     }
 }
