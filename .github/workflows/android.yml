@@ -163,16 +163,19 @@ jobs:
           project(":tauri-android").projectDir = file("$rootDir/.tauri/tauri-api")
           EOF
 
-          cat > "$ROOT/tauri.build.gradle.kts" <<'EOF'
+          # NOTE: app/build.gradle.kts has `apply(from = "tauri.build.gradle.kts")`,
+          # and `apply(from = ...)` is resolved relative to the calling script's
+          # directory (app/), so the file MUST live at $ROOT/app/, not $ROOT/.
+          cat > "$ROOT/app/tauri.build.gradle.kts" <<'EOF'
           dependencies {
               implementation(project(":tauri-android"))
           }
           EOF
 
-          echo "Created tauri.settings.gradle and tauri.build.gradle.kts"
+          echo "Created tauri.settings.gradle and app/tauri.build.gradle.kts"
           cat "$ROOT/tauri.settings.gradle"
           echo "---"
-          cat "$ROOT/tauri.build.gradle.kts"
+          cat "$ROOT/app/tauri.build.gradle.kts"
 
       - name: Scaffold .tauri/tauri-api/ Android library subproject
         run: |
