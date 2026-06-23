@@ -166,9 +166,15 @@ jobs:
           # NOTE: app/build.gradle.kts has `apply(from = "tauri.build.gradle.kts")`,
           # and `apply(from = ...)` is resolved relative to the calling script's
           # directory (app/), so the file MUST live at $ROOT/app/, not $ROOT/.
+          # ALSO: the apply is OUTSIDE the `dependencies { }` block in app/build.gradle.kts
+          # (line 91 vs the block closing on line 89), so this file is compiled as
+          # a standalone script — `implementation` (which lives on the
+          # DependencyHandler receiver) is unresolved at script-compile time.
+          # Use the string-based DSL accessor instead, which doesn't need the
+          # receiver and works in any context.
           cat > "$ROOT/app/tauri.build.gradle.kts" <<'EOF'
           dependencies {
-              implementation(project(":tauri-android"))
+              "implementation"(project(":tauri-android"))
           }
           EOF
 
