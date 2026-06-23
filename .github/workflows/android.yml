@@ -239,9 +239,14 @@ jobs:
             "$HOME/.local/share/pnpm" \
             "/usr/local/bin" \
             "/opt/pnpm/bin"; do
-            if [ -x "$p/pnpm" ] || [ -x "$p/pnpm.cjs" ]; then
+            if [ -x "$p/pnpm" ]; then
               echo "PNPM_BIN=$p" >> $GITHUB_OUTPUT
               echo "Found pnpm at: $p"
+              exit 0
+            fi
+            if [ -x "$p/pnpm.cjs" ]; then
+              echo "PNPM_BIN=$p" >> $GITHUB_OUTPUT
+              echo "Found pnpm.cjs at: $p"
               exit 0
             fi
           done
@@ -255,6 +260,10 @@ jobs:
           PNPM_BIN="${{ steps.pnpm.outputs.PNPM_BIN }}"
           export PATH="$PNPM_BIN:/opt/gradle/bin:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin:$BASE_PATH"
           echo "=== versions ==="
+          # If corepack installed pnpm.cjs but no pnpm shim, create one on the fly
+          if ! command -v pnpm >/dev/null 2>&1 && [ -x "$PNPM_BIN/pnpm.cjs" ]; then
+            ln -sf "$PNPM_BIN/pnpm.cjs" "$PNPM_BIN/pnpm"
+          fi
           pnpm --version
           node --version
           /opt/gradle/bin/gradle --version
