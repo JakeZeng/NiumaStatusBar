@@ -235,15 +235,14 @@ jobs:
                       environment("ANDROID_NDK_ROOT", ndkPath)
                       isIgnoreExitValue = true
                   }
-                  if (cargoResult.exitValue == 0) {
-                      throw GradleException("BUG: reached success path but exitCode was non-zero: ${cargoResult.exitValue}")
+                  if (cargoResult.exitValue != 0) {
+                      // Dump cargo stdout+stderr for debugging
+                      val logLines = cargoLog.takeIf { it.exists() }?.readLines() ?: emptyList()
+                      val tail = if (logLines.size > 200) logLines.takeLast(200) else logLines
+                      throw GradleException("cargo build failed for $targetTriple/$profile (exit ${cargoResult.exitValue}).\n" +
+                          "config.toml:\n${File(File(cargoRoot, ".cargo"), "config.toml").readText()}\n" +
+                          "Last 200 cargo log lines:\n${tail.joinToString("\n")}")
                   }
-                  // Dump cargo stdout+stderr directly (not log file, which may be empty)
-                  val logLines = cargoLog.takeIf { it.exists() }?.readLines() ?: emptyList()
-                  val tail = if (logLines.size > 200) logLines.takeLast(200) else logLines
-                  throw GradleException("cargo build failed for $targetTriple/$profile (exit ${cargoResult.exitValue}).\n" +
-                      "config.toml:\n${File(File(cargoRoot, ".cargo"), "config.toml").readText()}\n" +
-                      "Last 200 cargo log lines:\n${tail.joinToString("\n")}")
 
                   // soName: read from Cargo.toml to get the actual lib name
                   // (it's NOT lib<rootDir.name>.so — that was wrong)
