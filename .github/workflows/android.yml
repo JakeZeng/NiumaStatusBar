@@ -184,25 +184,34 @@ jobs:
 
                   val cargo = if (Os.isFamily(Os.FAMILY_WINDOWS)) "cargo.exe" else "cargo"
                   val profile = if (release) "release" else "debug"
+                  // tauri-cli's RustPlugin passes short names ('aarch64', 'armv7', etc.)
+                  // Expand to full rustc triples for cargo --target.
+                  val targetTriple = when (target) {
+                      "aarch64" -> "aarch64-linux-android"
+                      "armv7" -> "armv7-linux-androideabi"
+                      "i686" -> "i686-linux-android"
+                      "x86_64" -> "x86_64-linux-android"
+                      else -> target
+                  }
                   project.exec {
                       workingDir(rootDir)
                       executable(cargo)
-                      args("build", "--target", target, "--profile", profile)
+                      args("build", "--target", targetTriple, "--profile", profile)
                       if (project.logger.isEnabled(LogLevel.DEBUG)) args("-vv")
                       else if (project.logger.isEnabled(LogLevel.INFO)) args("-v")
                       environment("CARGO_TERM_COLOR", "always")
                   }.assertNormalExitValue()
 
                   val soName = "lib${rootDir.name}.so"
-                  val abi = when (target) {
+                  val abi = when (targetTriple) {
                       "aarch64-linux-android" -> "arm64-v8a"
                       "armv7-linux-androideabi" -> "armeabi-v7a"
                       "i686-linux-android" -> "x86"
                       "x86_64-linux-android" -> "x86_64"
-                      else -> target
+                      else -> targetTriple
                   }
-                  val srcSo = File(rootDir, "target/$target/$profile/$soName")
-                  val fallback = File(rootDir, "target/$target/$profile/libapp.so")
+                  val srcSo = File(rootDir, "target/$targetTriple/$profile/$soName")
+                  val fallback = File(rootDir, "target/$targetTriple/$profile/libapp.so")
                   val srcFinal = when {
                       srcSo.exists() -> srcSo
                       fallback.exists() -> fallback
