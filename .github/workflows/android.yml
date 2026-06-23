@@ -196,12 +196,28 @@ jobs:
                   // Run cargo, capture full output so linker errors are visible
                   val cargoLog = File(rootDir, "target/cargo-build-$targetTriple-$profile.log")
                   cargoLog.parentFile.mkdirs()
+                  // Point cargo to NDK toolchain so it can find -landroid, -llog, etc.
+                  val ndkPath = System.getenv("ANDROID_NDK_ROOT") ?: 
+                      System.getenv("ANDROID_SDK_ROOT")?.let { sdk -> "$sdk/ndk/27.0.12077973" } ?: ""
+                  val clangTriple = when (targetTriple) {
+                      "aarch64-linux-android" -> "aarch64-linux-android"
+                      "armv7-linux-androideabi" -> "armv7a-linux-androideabi"
+                      "i686-linux-android" -> "i686-linux-android"
+                      "x86_64-linux-android" -> "x86_64-linux-android"
+                      else -> targetTriple
+                  }
                   val cargoResult = project.exec {
                       workingDir(rootDir)
                       executable(cargo)
                       args("build", "--target", targetTriple, "--profile", profile)
                       args("--verbose")  // surface linker commands and full error context
                       environment("CARGO_TERM_COLOR", "never")
+                      // Set NDK clang as C compiler for Android targets
+                      if (ndkPath.isNotEmpty()) {
+                          environment("CC_${targetTriple.replace("-", "_").uppercase()}", 
+                              "$ndkPath/toolchains/llvm/prebuilt/linux-x86_64/bin/${clangTriple}24-clang")
+                          environment("ANDROID_NDK_ROOT", ndkPath)
+                      }
                       isIgnoreExitValue = true
                   }
                   if (cargoResult.exitValue != 0) {
