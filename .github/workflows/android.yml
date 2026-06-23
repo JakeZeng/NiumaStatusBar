@@ -157,6 +157,13 @@ jobs:
           #   "failed to read missing addr file /tmp/<id>-server-addr"
           # 'tauri android init' just regenerated the original BuildTask.kt, so we
           # overwrite it again to call cargo directly.
+          # NOTE: tauri android init writes BOTH BuildTask.java AND BuildTask.kt for
+          # the same class. Keeping both triggers a 'Conflicting declarations' error
+          # in kotlinc. Delete the .java siblings so only our patched .kt remains.
+          BUILDSRC_SRC=src-tauri/gen/android/buildSrc/src/main/java/com/aimonitor/app/kotlin
+          rm -f "$BUILDSRC_SRC/BuildTask.java" \
+                "$BUILDSRC_SRC/RustPlugin.java" \
+                "$BUILDSRC_SRC/Config.java"
           BUILDTASK=src-tauri/gen/android/buildSrc/src/main/java/com/aimonitor/app/kotlin/BuildTask.kt
           cat > "$BUILDTASK" <<'EOF'
           import java.io.File
