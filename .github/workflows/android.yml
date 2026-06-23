@@ -226,6 +226,14 @@ jobs:
                           configFile.writeText(existing.trimIndent() + "\n" + newSection)
                       }
                   }
+                  // cc-rs (used by build scripts and C deps) derives the C compiler name
+                  // from the rust TARGET triple, but its naming for armv7 is "arm-linux-androideabi-*"
+                  // while NDK ships "armv7a-linux-androideabi*". Linker config above only affects
+                  // the final link step — we also need CC/CXX/AR env vars so cc-rs picks the right
+                  // NDK clang. Env var name uses target triple with hyphens → underscores.
+                  val targetEnvKey = targetTriple.replace('-', '_')
+                  val ndkBin = "$ndkPath/toolchains/llvm/prebuilt/linux-x86_64/bin"
+                  val ccName = "${if (targetTriple == "armv7-linux-androideabi") "armv7a-linux-androideabi" else targetTriple}24-clang"
                   // Capture stdout/stderr in-memory (FileOutputStream to same file is unreliable)
                   val stdout = java.io.ByteArrayOutputStream()
                   val stderr = java.io.ByteArrayOutputStream()
@@ -236,6 +244,13 @@ jobs:
                       args("--verbose")  // surface linker commands and full error context
                       environment("CARGO_TERM_COLOR", "never")
                       environment("ANDROID_NDK_ROOT", ndkPath)
+                      if (ndkPath.isNotEmpty()) {
+                          environment("CC_${targetEnvKey}", "$ndkBin/$ccName")
+                          environment("CXX_${targetEnvKey}", "$ndkBin/${ccName}++")
+                          environment("AR_${targetEnvKey}", "$ndkBin/llvm-ar")
+                          environment("RANLIB_${targetEnvKey}", "$ndkBin/llvm-ranlib")
+                          environment("STRIP_${targetEnvKey}", "$ndkBin/llvm-strip")
+                      }
                       isIgnoreExitValue = true
                       standardOutput = stdout
                       errorOutput = stderr
