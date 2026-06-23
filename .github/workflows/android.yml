@@ -226,6 +226,9 @@ jobs:
                           configFile.writeText(existing.trimIndent() + "\n" + newSection)
                       }
                   }
+                  // Capture stdout/stderr in-memory (FileOutputStream to same file is unreliable)
+                  val stdout = java.io.ByteArrayOutputStream()
+                  val stderr = java.io.ByteArrayOutputStream()
                   val cargoResult = project.exec {
                       workingDir(cargoRoot)
                       executable(cargo)
@@ -234,13 +237,18 @@ jobs:
                       environment("CARGO_TERM_COLOR", "never")
                       environment("ANDROID_NDK_ROOT", ndkPath)
                       isIgnoreExitValue = true
+                      standardOutput = stdout
+                      errorOutput = stderr
                   }
+                  // Persist to log file for debugging
+                  cargoLog.writeText(stdout.toString() + stderr.toString())
                   if (cargoResult.exitValue != 0) {
-                      // Dump cargo stdout+stderr for debugging
-                      val logLines = cargoLog.takeIf { it.exists() }?.readLines() ?: emptyList()
-                      val tail = if (logLines.size > 200) logLines.takeLast(200) else logLines
+                      val combined = (stdout.toString() + stderr.toString()).lines()
+                      val tail = if (combined.size > 200) combined.takeLast(200) else combined
+                      val configPath = File(File(cargoRoot, ".cargo"), "config.toml")
+                      val configText = if (configPath.exists()) configPath.readText() else "(no config.toml)"
                       throw GradleException("cargo build failed for $targetTriple/$profile (exit ${cargoResult.exitValue}).\n" +
-                          "config.toml:\n${File(File(cargoRoot, ".cargo"), "config.toml").readText()}\n" +
+                          "config.toml:\n$configText\n" +
                           "Last 200 cargo log lines:\n${tail.joinToString("\n")}")
                   }
 
