@@ -20,6 +20,8 @@ jobs:
     env:
       GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx4g"
       ANDROID_SDK_ROOT: ${{ github.workspace }}/.android-sdk
+      ANDROID_HOME: ${{ github.workspace }}/.android-sdk
+      ANDROID_NDK_HOME: ${{ github.workspace }}/.android-sdk/ndk/27.0.12077973
       BASE_PATH: "/snap/bin:/home/runner/.local/bin:/opt/pipx_bin:/home/runner/.cargo/bin:/home/runner/.config/composer/vendor/bin:/usr/local/.ghcup/bin:/home/runner/.dotnet/tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
     steps:
@@ -103,10 +105,17 @@ jobs:
           export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$PATH"
           sdkmanager --install \
             "platform-tools" \
-            "platforms;android-36" \
-            "build-tools;36.0.0" \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
             "ndk;27.0.12077973" \
             "cmake;3.22.1"
+
+      - name: Set Android environment variables
+        run: |
+          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/27.0.12077973" >> $GITHUB_ENV
+          echo "PATH=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$PATH" >> $GITHUB_ENV
+          echo "JAVA_HOME=$JAVA_HOME" >> $GITHUB_ENV
 
       - name: Write local.properties (for Gradle)
         run: |
@@ -119,66 +128,67 @@ jobs:
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
 
-      - name: Init Tauri Android project (force regenerate)
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Init Tauri Android project
         run: |
           set -e
           export ANDROID_HOME="$ANDROID_SDK_ROOT"
           export ANDROID_SDK_ROOT="$ANDROID_SDK_ROOT"
-          export NDK_HOME="$ANDROID_SDK_ROOT/ndk/27.0.12077973"
+          export ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/27.0.12077973"
           cd src-tauri
           rm -rf gen/android
           cd ..
           pnpm tauri android init --ci
 
-      - name: Ensure tauri.settings.gradle / tauri.build.gradle.kts exist
+      - name: Ensure tauri.settings.gradle and tauri.build.gradle.kts exist
         run: |
           set -e
-          # tauri.settings.gradle wires the tauri-android Gradle subproject (at
-          # .tauri/tauri-api/, which is gitignored) into settings; tauri.build.gradle.kts
-          # adds the dependency. Both are .gitignored. In tauri-cli 2.11.x `tauri android
-          # init` doesn't write the *content* of these in --ci mode, only the files,
-          # so we must fill them in ourselves. Without this, MainActivity can't find
-          # TauriActivity (which lives in the tauri-android library, not the app module).
           ROOT=src-tauri/gen/android
-          if [ ! -f "$ROOT/tauri.settings.gradle" ]; then
-            echo "(creating $ROOT/tauri.settings.gradle)"
-          fi
+
+          # tauri-android is a Gradle subproject generated on first cargo build
+          # (WRY build.rs writes the Kotlin source via WRY_ANDROID_KOTLIN_FILES_OUT_DIR).
+          # tauri-cli 2.11.x doesn't create these wiring files in --ci mode, so we do.
           cat > "$ROOT/tauri.settings.gradle" <<'EOF'
-          include ':tauri-android'
-          project(':tauri-android').projectDir = new File('./.tauri/tauri-api')
+          include(":tauri-android")
+          project(":tauri-android").projectDir = file("$rootDir/.tauri/tauri-api")
           EOF
-          if [ ! -f "$ROOT/app/tauri.build.gradle.kts" ]; then
-            echo "(creating $ROOT/app/tauri.build.gradle.kts)"
-          fi
-          cat > "$ROOT/app/tauri.build.gradle.kts" <<'EOF'
-          // Pulled in via `apply(from = "tauri.build.gradle.kts")` inside the
-          // app's `dependencies { }` block in build.gradle.kts.
-          implementation(project(":tauri-android"))
+
+          cat > "$ROOT/tauri.build.gradle.kts" <<'EOF'
+          dependencies {
+              implementation(project(":tauri-android"))
+          }
           EOF
-          echo "--- final state ---"
+
+          echo "Created tauri.settings.gradle and tauri.build.gradle.kts"
           cat "$ROOT/tauri.settings.gradle"
           echo "---"
-          cat "$ROOT/app/tauri.build.gradle.kts"
-          echo "--- tauri-android subproject ---"
-          ls -la "$ROOT/.tauri/tauri-api/" 2>/dev/null || echo "(MISSING — will be created in next step)"
+          cat "$ROOT/tauri.build.gradle.kts"
 
       - name: Scaffold .tauri/tauri-api/ Android library subproject
         run: |
           set -e
-          # tauri-cli 2.11.x's 'tauri android init --ci' does NOT scaffold the
-          # tauri-android Gradle subproject (it just references it via
-          # tauri.settings.gradle). The subproject is normally created by
-          # `tauri_plugin::Builder::android_path("android")` at cargo build time
-          # (WRY's build script writes the Kotlin source files), but the gradle
-          # build files / manifest must exist FIRST or gradle won't even configure.
-          # We scaffold them here so the subproject is gradle-valid; WRY fills in
-          # the Kotlin source (TauriActivity.kt etc.) during the cargo build that
-          # runs from the patched BuildTask.
+          # tauri-cli 2.11.x's `tauri android init --ci` references the
+          # :tauri-android subproject (./.tauri/tauri-api/) but doesn't scaffold
+          # it. Gradle won't configure without build.gradle.kts + manifest, and
+          # WRY's build script only writes the Kotlin source files — not the
+          # gradle scaffolding. So we create the gradle files here. WRY fills
+          # in the Kotlin source (TauriActivity.kt etc.) at cargo build time.
+          #
+          # namespace MUST match the user's app package id, otherwise
+          # TauriActivity ends up in the wrong package and MainActivity
+          # (which uses the unqualified name) can't find it.
           API=src-tauri/gen/android/.tauri/tauri-api
           mkdir -p "$API/src/main/java"
-          # Android library module config. namespace MUST match the user's app
-          # package id, otherwise TauriActivity ends up in the wrong package
-          # and MainActivity (in com.aimonitor.app) can't find it.
           cat > "$API/build.gradle.kts" <<'EOF'
           plugins {
               id("com.android.library")
@@ -186,7 +196,7 @@ jobs:
           }
           android {
               namespace = "com.aimonitor.app"
-              compileSdk = 36
+              compileSdk = 35
               defaultConfig {
                   minSdk = 21
                   testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -218,13 +228,11 @@ jobs:
               androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
           }
           EOF
-          # Empty manifest (it's an Android library, no Activities of its own)
           cat > "$API/src/main/AndroidManifest.xml" <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
           </manifest>
           EOF
-          # Proguard rules + consumer rules (referenced from build.gradle.kts)
           : > "$API/proguard-rules.pro"
           : > "$API/consumer-rules.pro"
           echo "--- tauri-api scaffold ---"
@@ -233,46 +241,48 @@ jobs:
       - name: Patch BuildTask to bypass tauri-cli android-studio-script
         run: |
           set -e
-          # tauri-cli 2.11.x's 'android-studio-script' panics in release builds:
-          #   "failed to read missing addr file /tmp/<id>-server-addr"
-          # 'tauri android init' just regenerated the original BuildTask.kt, so we
-          # overwrite it again to call cargo directly.
-          # NOTE: tauri android init writes BOTH BuildTask.java AND BuildTask.kt for
-          # the same class. Keeping both triggers a 'Conflicting declarations' error
-          # in kotlinc. Delete the .java siblings so only our patched .kt remains.
+          # tauri-cli 2.11.x's BuildTask.kt calls `pnpm tauri android android-studio-script`
+          # which panics in CI with: "failed to read missing addr file /tmp/<id>-server-addr"
+          # We replace it with a direct `cargo build` invocation that:
+          #   1. Writes the NDK linker / cc-rs compiler env vars (armv7 uses
+          #      armv7a-linux-androideabi24-clang, not arm-linux-androideabi-clang
+          #      that cc-rs derives from the target triple).
+          #   2. Points WRY's Kotlin source generator at the gradle subproject
+          #      (./.tauri/tauri-api/src/main/java) so the kotlin files end up
+          #      where the :tauri-android:compileKotlin task expects them.
+          #   3. Captures cargo stdout/stderr to a log file on failure.
+          # Also: tauri android init writes BOTH BuildTask.java AND BuildTask.kt
+          # for the same class. Keeping both triggers a kotlinc duplicate-class
+          # compile error. Delete the .java siblings.
           BUILDSRC_SRC=src-tauri/gen/android/buildSrc/src/main/java/com/aimonitor/app/kotlin
           rm -f "$BUILDSRC_SRC/BuildTask.java" \
                 "$BUILDSRC_SRC/RustPlugin.java" \
                 "$BUILDSRC_SRC/Config.java"
-          BUILDTASK=src-tauri/gen/android/buildSrc/src/main/java/com/aimonitor/app/kotlin/BuildTask.kt
+          BUILDTASK="$BUILDSRC_SRC/BuildTask.kt"
           cat > "$BUILDTASK" <<'EOF'
           import java.io.File
           import org.apache.tools.ant.taskdefs.condition.Os
           import org.gradle.api.DefaultTask
           import org.gradle.api.GradleException
-          import org.gradle.api.logging.LogLevel
           import org.gradle.api.tasks.Input
           import org.gradle.api.tasks.TaskAction
 
           open class BuildTask : DefaultTask() {
-              @Input
-              var rootDirRel: String? = null
-              @Input
-              var target: String? = null
-              @Input
-              var release: Boolean? = null
+              @Input var rootDirRel: String? = null
+              @Input var target: String? = null
+              @Input var release: Boolean? = null
 
               @TaskAction
               fun assemble() {
                   val rootDirRel = rootDirRel ?: throw GradleException("rootDirRel cannot be null")
                   val target = target ?: throw GradleException("target cannot be null")
                   val release = release ?: throw GradleException("release cannot be null")
-                  val rootDir = File(project.projectDir, rootDirRel)
 
                   val cargo = if (Os.isFamily(Os.FAMILY_WINDOWS)) "cargo.exe" else "cargo"
                   val profile = if (release) "release" else "debug"
-                  // tauri-cli's RustPlugin passes short names ('aarch64', 'armv7', etc.)
-                  // Expand to full rustc triples for cargo --target.
+
+                  // tauri-cli's RustPlugin passes short names ("aarch64", "armv7", ...)
+                  // but cargo --target wants the full rustc triple.
                   val targetTriple = when (target) {
                       "aarch64" -> "aarch64-linux-android"
                       "armv7" -> "armv7-linux-androideabi"
@@ -280,55 +290,57 @@ jobs:
                       "x86_64" -> "x86_64-linux-android"
                       else -> target
                   }
-                  // Run cargo, capture full output so linker errors are visible
-                  // cargo runs in the Tauri workspace root: ../.. from src-tauri/gen/android
-                  // Use absolute paths to avoid cwd ambiguity in gradle exec context
+
                   val cargoRoot = File(project.projectDir, rootDirRel).absoluteFile
                   val cargoLog = File(cargoRoot, "target/cargo-build-$targetTriple-$profile.log")
                   cargoLog.parentFile.mkdirs()
-                  // Point cargo to NDK clang via .cargo/config.toml in the CARGO ROOT
-                  // (cargo only reads target-specific linker settings from config files,
-                  // and it reads from the workspace root, not the cwd)
-                  val ndkPath = System.getenv("ANDROID_NDK_ROOT") ?: 
-                      System.getenv("ANDROID_SDK_ROOT")?.let { sdk -> "$sdk/ndk/27.0.12077973" } ?: ""
+
+                  val ndkPath = System.getenv("ANDROID_NDK_HOME")
+                      ?: System.getenv("ANDROID_NDK_ROOT")
+                      ?: ""
+                  val ndkBin = "$ndkPath/toolchains/llvm/prebuilt/linux-x86_64/bin"
+
+                  // NDK clang filenames differ from rust target triples for armv7:
+                  // rust: armv7-linux-androideabi -> NDK: armv7a-linux-androideabi
+                  val clangTriple = when (targetTriple) {
+                      "armv7-linux-androideabi" -> "armv7a-linux-androideabi"
+                      else -> targetTriple
+                  }
+                  val ccName = "${clangTriple}24-clang"
+
+                  // Point cargo to NDK clang via .cargo/config.toml (only affects final link).
                   if (ndkPath.isNotEmpty()) {
                       val cargoDir = File(cargoRoot, ".cargo")
                       cargoDir.mkdirs()
-                      // NDK clang filenames differ from rust target triples for armv7:
-                      // rust: armv7-linux-androideabi -> NDK: armv7a-linux-androideabi
-                      val clangTriple = when (targetTriple) {
-                          "armv7-linux-androideabi" -> "armv7a-linux-androideabi"
-                          else -> targetTriple
-                      }
-                      // Append to existing config.toml (multiple targets run in parallel)
                       val configFile = File(cargoDir, "config.toml")
                       val existing = if (configFile.exists()) configFile.readText() else ""
                       val newSection = """
                           [target.${targetTriple}]
-                          linker = "${ndkPath}/toolchains/llvm/prebuilt/linux-x86_64/bin/${clangTriple}24-clang"
-                          ar = "${ndkPath}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
+                          linker = "${ndkBin}/${ccName}"
+                          ar = "${ndkBin}/llvm-ar"
                       """.trimIndent()
-                      // Only write if this target isn't already in the config
                       if (!existing.contains("[target.${targetTriple}]")) {
                           configFile.writeText(existing.trimIndent() + "\n" + newSection)
                       }
                   }
-                  // cc-rs (used by build scripts and C deps) derives the C compiler name
-                  // from the rust TARGET triple, but its naming for armv7 is "arm-linux-androideabi-*"
-                  // while NDK ships "armv7a-linux-androideabi*". Linker config above only affects
-                  // the final link step — we also need CC/CXX/AR env vars so cc-rs picks the right
-                  // NDK clang. Env var name uses target triple with hyphens → underscores.
+
+                  // cc-rs derives the C compiler from the target triple, so it looks
+                  // for "arm-linux-androideabi-clang" — NDK ships that as
+                  // "armv7a-linux-androideabi24-clang". Set CC_/CXX_/AR_/etc env
+                  // vars (target triple with hyphens -> underscores) to point
+                  // cargo at the right NDK clang. This is a no-op for targets
+                  // where the names already match.
                   val targetEnvKey = targetTriple.replace('-', '_')
-                  val ndkBin = "$ndkPath/toolchains/llvm/prebuilt/linux-x86_64/bin"
-                  val ccName = "${if (targetTriple == "armv7-linux-androideabi") "armv7a-linux-androideabi" else targetTriple}24-clang"
-                  // Capture stdout/stderr in-memory (FileOutputStream to same file is unreliable)
+                  val tauriApiJava = File(cargoRoot, "gen/android/.tauri/tauri-api/src/main/java").absoluteFile
+                  tauriApiJava.mkdirs()
+
                   val stdout = java.io.ByteArrayOutputStream()
                   val stderr = java.io.ByteArrayOutputStream()
                   val cargoResult = project.exec {
                       workingDir(cargoRoot)
                       executable(cargo)
                       args("build", "--target", targetTriple, "--profile", profile)
-                      args("--verbose")  // surface linker commands and full error context
+                      args("--verbose")
                       environment("CARGO_TERM_COLOR", "never")
                       environment("ANDROID_NDK_ROOT", ndkPath)
                       if (ndkPath.isNotEmpty()) {
@@ -338,22 +350,14 @@ jobs:
                           environment("RANLIB_${targetEnvKey}", "$ndkBin/llvm-ranlib")
                           environment("STRIP_${targetEnvKey}", "$ndkBin/llvm-strip")
                       }
-                      // The Tauri Android runtime (TauriActivity.kt etc.) is generated by
-                      // WRY's build script at build time, written to the path in
-                      // WRY_ANDROID_KOTLIN_FILES_OUT_DIR. By default WRY writes relative to
-                      // the cargo workspace (src-tauri/), so the files end up at
-                      // src-tauri/.tauri/tauri-api/src/main/java/... — but gradle's
-                      // settings.gradle expects src-tauri/gen/android/.tauri/tauri-api/...
-                      // Force WRY to write where gradle is looking.
-                      // cargoRoot == src-tauri/ (set above as absolute path)
-                      val tauriApiJava = File(cargoRoot, "gen/android/.tauri/tauri-api/src/main/java").absoluteFile
-                      tauriApiJava.mkdirs()
+                      // Tell WRY's build script where the :tauri-android subproject
+                      // is so its generated Kotlin source lands where gradle
+                      // compiles it.
                       environment("WRY_ANDROID_KOTLIN_FILES_OUT_DIR", tauriApiJava.absolutePath)
                       isIgnoreExitValue = true
                       standardOutput = stdout
                       errorOutput = stderr
                   }
-                  // Persist to log file for debugging
                   cargoLog.writeText(stdout.toString() + stderr.toString())
                   if (cargoResult.exitValue != 0) {
                       val combined = (stdout.toString() + stderr.toString()).lines()
@@ -365,8 +369,7 @@ jobs:
                           "Last 200 cargo log lines:\n${tail.joinToString("\n")}")
                   }
 
-                  // soName: read from Cargo.toml to get the actual lib name
-                  // (it's NOT lib<rootDir.name>.so — that was wrong)
+                  // Copy the built .so into the Android project for APK packaging.
                   val cargoToml = File(cargoRoot, "Cargo.toml")
                   val soName = if (cargoToml.exists()) {
                       val tomlText = cargoToml.readText()
@@ -385,7 +388,7 @@ jobs:
                   val targetDir = File(cargoRoot, "target/$targetTriple/$profile")
                   val srcSo = File(targetDir, soName)
                   val fallback = File(targetDir, "libapp.so")
-                  val candidates = targetDir.listFiles()?.filter { 
+                  val candidates = targetDir.listFiles()?.filter {
                       it.name.endsWith(".so") && it.name.startsWith("lib")
                   } ?: emptyList()
                   val srcFinal = when {
@@ -404,190 +407,57 @@ jobs:
               }
           }
           EOF
-          echo "--- patched BuildTask.kt ---"
-          head -10 "$BUILDTASK"
           # Nuke buildSrc compile cache so our patched task is recompiled
           rm -rf .gradle buildSrc/build buildSrc/.gradle 2>/dev/null || true
-          # Also bust the parent project's caches that might reference the old BuildTask
-          rm -rf /home/runner/.gradle/caches/build-cache-* 2>/dev/null || true
-          # Remove any stale .cargo/config (non-toml) that might override our new config.toml
-          rm -f src-tauri/.cargo/config 2>/dev/null || true
+          rm -rf ~/.gradle/caches/build-cache-* 2>/dev/null || true
+          echo "--- patched BuildTask.kt (first 20 lines) ---"
+          head -20 "$BUILDTASK"
 
-      - name: Pre-download Gradle 8.14.4 + point wrapper to local file
-        shell: bash
+      - name: Make gradlew executable
+        run: |
+          chmod +x src-tauri/gen/android/gradlew || true
+          chmod +x src-tauri/gen/android/gradlew.bat || true
+
+      - name: Build Android APK
         run: |
           set -e
-          export PATH="$BASE_PATH"
-          GRADLE_VER="8.14.4"
-          ZIP="/tmp/gradle-${GRADLE_VER}-bin.zip"
-          GRADLE_HOME_DIR="/opt/gradle"
-          if [ -x "$GRADLE_HOME_DIR/bin/gradle" ]; then
-            echo "Gradle already installed at $GRADLE_HOME_DIR"
-          else
-            echo "Downloading gradle..."
-            OK=0
-            for URL in \
-              "https://services.gradle.org/distributions/gradle-${GRADLE_VER}-bin.zip" \
-              "https://github.com/gradle/gradle/releases/download/v${GRADLE_VER}/gradle-${GRADLE_VER}-bin.zip" \
-              "https://mirrors.tuna.tsinghua.edu.cn/gradle/gradle-${GRADLE_VER}-bin.zip" \
-              "https://mirrors.huaweicloud.com/gradle/gradle-${GRADLE_VER}-bin.zip" \
-              "https://mirrors.cloud.tencent.com/gradle/gradle-${GRADLE_VER}-bin.zip"; do
-              echo "Trying: $URL"
-              if curl -fSL --connect-timeout 20 --max-time 900 -o "$ZIP" "$URL"; then
-                if [ -s "$ZIP" ]; then
-                  OK=1
-                  echo "  -> OK"
-                  break
-                fi
-              fi
-              rm -f "$ZIP"
-            done
-            if [ "$OK" != "1" ]; then
-              echo "FATAL: All gradle download URLs failed"
-              exit 1
-            fi
-            echo "Extracting to $GRADLE_HOME_DIR ..."
-            mkdir -p "$GRADLE_HOME_DIR"
-            unzip -qo "$ZIP" -d /opt/
-            if [ -d "/opt/gradle-${GRADLE_VER}" ]; then
-              cp -a "/opt/gradle-${GRADLE_VER}/." "$GRADLE_HOME_DIR/"
-              rm -rf "/opt/gradle-${GRADLE_VER}"
-            fi
-            # keep the zip! we'll point the wrapper to it
-            chmod +x "$GRADLE_HOME_DIR/bin/gradle" || true
-            echo "Gradle installed:"
-            "$GRADLE_HOME_DIR/bin/gradle" --version
-          fi
+          export ANDROID_HOME="$ANDROID_SDK_ROOT"
+          export ANDROID_SDK_ROOT="$ANDROID_SDK_ROOT"
+          export ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/27.0.12077973"
+          export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$PATH"
 
-          # Now repoint the wrapper to the local zip so `gradlew` doesn't try to download
-          WRAPPER_PROPS="src-tauri/gen/android/gradle/wrapper/gradle-wrapper.properties"
-          if [ -f "$ZIP" ]; then
-            sed -i "s|^distributionUrl=.*|distributionUrl=file\\:${ZIP}|" "$WRAPPER_PROPS"
-            echo "--- updated wrapper ---"
-            cat "$WRAPPER_PROPS"
-          else
-            echo "WARN: zip missing at $ZIP, wrapper will try network"
-          fi
+          cd src-tauri
 
-          # Also pre-seed the wrapper cache so gradlew doesn't even re-check
-          # Wrapper uses sha256 of distributionUrl as cache key
-          WRAPPER_HASH=$(printf '%s' "file:${ZIP}" | sha256sum | cut -c1-30)
-          CACHE_DIR="$HOME/.gradle/wrapper/dists/gradle-${GRADLE_VER}-bin/${WRAPPER_HASH}"
-          echo "Wrapper cache dir would be: $CACHE_DIR"
-          # Don't try to manually populate the cache; file:// url will be used directly
+          echo "Starting Android APK build..."
+          # Run via the gradle wrapper so we can surface the failure clearly.
+          ./gen/android/gradlew -p gen/android assembleRelease --no-daemon --stacktrace 2>&1 | tee build.log
 
-          echo "GRADLE_HOME=$GRADLE_HOME_DIR" >> $GITHUB_ENV
-          echo "GRADLE_ZIP=$ZIP" >> $GITHUB_ENV
+          echo ""
+          echo "=== Build outputs ==="
+          find gen/android/app/build/outputs -name "*.apk" -type f -ls || echo "No APK found!"
 
-      - name: Cache Gradle / cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-            ~/.cargo/registry
-            ~/.cargo/git
-            src-tauri/target
-          key: ${{ runner.os }}-android-${{ hashFiles('src-tauri/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-android-
-
-      - name: Locate pnpm bin for gradle rust plugin
-        id: pnpm
-        shell: bash
-        run: |
-          set -e
-          for p in \
-            "$HOME/.cache/node/corepack/v1/pnpm"/*/bin \
-            "$HOME/.local/share/pnpm" \
-            "/usr/local/bin" \
-            "/opt/pnpm/bin"; do
-            if [ -x "$p/pnpm" ]; then
-              echo "PNPM_BIN=$p" >> $GITHUB_OUTPUT
-              echo "Found pnpm at: $p"
-              exit 0
-            fi
-            if [ -x "$p/pnpm.cjs" ]; then
-              echo "PNPM_BIN=$p" >> $GITHUB_OUTPUT
-              echo "Found pnpm.cjs at: $p"
-              exit 0
-            fi
-          done
-          echo "FATAL: pnpm not found"
-          exit 1
-
-      - name: Tauri Android build (apk) — direct gradle
-        shell: bash
-        run: |
-          set -e
-          PNPM_BIN="${{ steps.pnpm.outputs.PNPM_BIN }}"
-          export PATH="$PNPM_BIN:/opt/gradle/bin:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin:$BASE_PATH"
-          echo "=== versions ==="
-          # If corepack installed pnpm.cjs but no pnpm shim, create one on the fly
-          if ! command -v pnpm >/dev/null 2>&1 && [ -x "$PNPM_BIN/pnpm.cjs" ]; then
-            ln -sf "$PNPM_BIN/pnpm.cjs" "$PNPM_BIN/pnpm"
-          fi
-          pnpm --version
-          node --version
-          /opt/gradle/bin/gradle --version
-          echo "=== current wrapper props ==="
-          cat src-tauri/gen/android/gradle/wrapper/gradle-wrapper.properties
-          echo "=== running gradle assembleRelease directly (this also compiles rust via 'rust' gradle plugin) ==="
-          cd src-tauri/gen/android
-          /opt/gradle/bin/gradle assembleRelease --no-daemon --stacktrace 2>&1 | tail -300
-        env:
-          CI: 'true'
-          ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
-          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
-          GRADLE_HOME: /opt/gradle
-          RUST_BACKTRACE: 'full'
-
-      - name: Locate APKs (debug info)
-        shell: bash
-        run: |
-          echo "=== Searching for APKs ==="
-          find src-tauri/gen/android -name "*.apk" -type f 2>&1 | head -50 || echo "find failed"
-          echo "=== build/outputs tree ==="
-          ls -laR src-tauri/gen/android/app/build/outputs 2>&1 | head -80 || echo "no outputs dir"
-
-      - name: Upload APK (universal release)
+      - name: Upload APK (debug)
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: app-release-universal
-          path: src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk
-          if-no-files-found: warn
+          name: android-apk-debug
+          path: src-tauri/gen/android/app/build/outputs/apk/debug/*.apk
+          retention-days: 30
+          if-no-files-found: error
 
-      - name: Upload APK (arm64-v8a)
+      - name: Upload APK (release)
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: app-release-arm64
-          path: src-tauri/gen/android/app/build/outputs/apk/arm64-v8a/release/*.apk
-          if-no-files-found: warn
+          name: android-apk-release
+          path: src-tauri/gen/android/app/build/outputs/apk/release/*.apk
+          retention-days: 30
+          if-no-files-found: error
 
-      - name: Upload APK (armeabi-v7a)
+      - name: Upload build log (if failed)
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: app-release-armv7
-          path: src-tauri/gen/android/app/build/outputs/apk/armeabi-v7a/release/*.apk
-          if-no-files-found: warn
-
-      - name: Upload APK (debug, fallback)
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-debug-universal
-          path: src-tauri/gen/android/app/build/outputs/apk/universal/debug/*.apk
-          if-no-files-found: warn
-
-      - name: Upload APK (all found)
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-all-apks
-          path: src-tauri/gen/android/**/*.apk
-          if-no-files-found: warn
-
-      - name: Upload cargo build log (for debugging linker errors)
-        uses: actions/upload-artifact@v4
-        with:
-          name: cargo-build-log
-          path: src-tauri/target/cargo-build-*.log
-          if-no-files-found: ignore
+          name: build-log
+          path: src-tauri/build.log
+          retention-days: 7
