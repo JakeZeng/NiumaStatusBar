@@ -207,11 +207,24 @@ jobs:
                   if (ndkPath.isNotEmpty()) {
                       val cargoDir = File(cargoRoot, ".cargo")
                       cargoDir.mkdirs()
-                      File(cargoDir, "config.toml").writeText("""
+                      // NDK clang filenames differ from rust target triples for armv7:
+                      // rust: armv7-linux-androideabi -> NDK: armv7a-linux-androideabi
+                      val clangTriple = when (targetTriple) {
+                          "armv7-linux-androideabi" -> "armv7a-linux-androideabi"
+                          else -> targetTriple
+                      }
+                      // Append to existing config.toml (multiple targets run in parallel)
+                      val configFile = File(cargoDir, "config.toml")
+                      val existing = if (configFile.exists()) configFile.readText() else ""
+                      val newSection = """
                           [target.${targetTriple}]
-                          linker = "${ndkPath}/toolchains/llvm/prebuilt/linux-x86_64/bin/${targetTriple}24-clang"
+                          linker = "${ndkPath}/toolchains/llvm/prebuilt/linux-x86_64/bin/${clangTriple}24-clang"
                           ar = "${ndkPath}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
-                      """.trimIndent())
+                      """.trimIndent()
+                      // Only write if this target isn't already in the config
+                      if (!existing.contains("[target.${targetTriple}]")) {
+                          configFile.writeText(existing.trimIndent() + "\n" + newSection)
+                      }
                   }
                   val cargoResult = project.exec {
                       workingDir(cargoRoot)
