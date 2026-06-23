@@ -229,12 +229,33 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-android-
 
+      - name: Locate pnpm bin for gradle rust plugin
+        id: pnpm
+        shell: bash
+        run: |
+          set -e
+          for p in \
+            "$HOME/.cache/node/corepack/v1/pnpm"/*/bin \
+            "$HOME/.local/share/pnpm" \
+            "/usr/local/bin" \
+            "/opt/pnpm/bin"; do
+            if [ -x "$p/pnpm" ] || [ -x "$p/pnpm.cjs" ]; then
+              echo "PNPM_BIN=$p" >> $GITHUB_OUTPUT
+              echo "Found pnpm at: $p"
+              exit 0
+            fi
+          done
+          echo "FATAL: pnpm not found"
+          exit 1
+
       - name: Tauri Android build (apk) — direct gradle
         shell: bash
         run: |
           set -e
-          export PATH="/opt/gradle/bin:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin:$BASE_PATH"
+          PNPM_BIN="${{ steps.pnpm.outputs.PNPM_BIN }}"
+          export PATH="$PNPM_BIN:/opt/gradle/bin:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin:$BASE_PATH"
           echo "=== versions ==="
+          pnpm --version
           node --version
           /opt/gradle/bin/gradle --version
           echo "=== current wrapper props ==="
