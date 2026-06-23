@@ -194,14 +194,18 @@ jobs:
                       else -> target
                   }
                   // Run cargo, capture full output so linker errors are visible
-                  val cargoLog = File(rootDir, "target/cargo-build-$targetTriple-$profile.log")
+                  // cargo runs in the Tauri workspace root: ../.. from src-tauri/gen/android
+                  // Use absolute paths to avoid cwd ambiguity in gradle exec context
+                  val cargoRoot = File(project.projectDir, rootDirRel).absoluteFile
+                  val cargoLog = File(cargoRoot, "target/cargo-build-$targetTriple-$profile.log")
                   cargoLog.parentFile.mkdirs()
-                  // Point cargo to NDK clang via .cargo/config.toml (cargo only reads target-
-                  // specific linker settings from config files, not from CC_ env vars)
+                  // Point cargo to NDK clang via .cargo/config.toml in the CARGO ROOT
+                  // (cargo only reads target-specific linker settings from config files,
+                  // and it reads from the workspace root, not the cwd)
                   val ndkPath = System.getenv("ANDROID_NDK_ROOT") ?: 
                       System.getenv("ANDROID_SDK_ROOT")?.let { sdk -> "$sdk/ndk/27.0.12077973" } ?: ""
                   if (ndkPath.isNotEmpty()) {
-                      val cargoDir = File(rootDir, ".cargo")
+                      val cargoDir = File(cargoRoot, ".cargo")
                       cargoDir.mkdirs()
                       File(cargoDir, "config.toml").writeText("""
                           [target.${targetTriple}]
@@ -210,7 +214,7 @@ jobs:
                       """.trimIndent())
                   }
                   val cargoResult = project.exec {
-                      workingDir(rootDir)
+                      workingDir(cargoRoot)
                       executable(cargo)
                       args("build", "--target", targetTriple, "--profile", profile)
                       args("--verbose")  // surface linker commands and full error context
@@ -228,7 +232,16 @@ jobs:
                       }
                   }
 
-                  val soName = "lib${rootDir.name}.so"
+                  // soName: read from Cargo.toml to get the actual lib name
+                  // (it's NOT lib<rootDir.name>.so — that was wrong)
+                  val cargoToml = File(cargoRoot, "Cargo.toml")
+                  val soName = if (cargoToml.exists()) {
+                      val tomlText = cargoToml.readText()
+                      val nameMatch = Regex("""name\s*=\s*"([^"]+)"""").find(tomlText)
+                      "lib${nameMatch?.groupValues?.get(1) ?: "app"}.so"
+                  } else {
+                      "libapp.so"
+                  }
                   val abi = when (targetTriple) {
                       "aarch64-linux-android" -> "arm64-v8a"
                       "armv7-linux-androideabi" -> "armeabi-v7a"
@@ -236,12 +249,19 @@ jobs:
                       "x86_64-linux-android" -> "x86_64"
                       else -> targetTriple
                   }
-                  val srcSo = File(rootDir, "target/$targetTriple/$profile/$soName")
-                  val fallback = File(rootDir, "target/$targetTriple/$profile/libapp.so")
+                  val targetDir = File(cargoRoot, "target/$targetTriple/$profile")
+                  val srcSo = File(targetDir, soName)
+                  val fallback = File(targetDir, "libapp.so")
+                  val candidates = targetDir.listFiles()?.filter { 
+                      it.name.endsWith(".so") && it.name.startsWith("lib")
+                  } ?: emptyList()
                   val srcFinal = when {
                       srcSo.exists() -> srcSo
                       fallback.exists() -> fallback
-                      else -> throw GradleException("Built .so not found at $srcSo or $fallback")
+                      candidates.isNotEmpty() -> candidates.first().also {
+                          project.logger.lifecycle("Found .so via glob: $it")
+                      }
+                      else -> throw GradleException("Built .so not found in $targetDir (tried: $soName, libapp.so, candidates: $candidates)")
                   }
                   val dstDir = File(project.projectDir, "src/main/jniLibs/$abi")
                   if (!dstDir.exists()) dstDir.mkdirs()
