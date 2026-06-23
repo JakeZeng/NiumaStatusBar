@@ -196,15 +196,18 @@ jobs:
                   // Run cargo, capture full output so linker errors are visible
                   val cargoLog = File(rootDir, "target/cargo-build-$targetTriple-$profile.log")
                   cargoLog.parentFile.mkdirs()
-                  // Point cargo to NDK toolchain so it can find -landroid, -llog, etc.
+                  // Point cargo to NDK clang via .cargo/config.toml (cargo only reads target-
+                  // specific linker settings from config files, not from CC_ env vars)
                   val ndkPath = System.getenv("ANDROID_NDK_ROOT") ?: 
                       System.getenv("ANDROID_SDK_ROOT")?.let { sdk -> "$sdk/ndk/27.0.12077973" } ?: ""
-                  val clangTriple = when (targetTriple) {
-                      "aarch64-linux-android" -> "aarch64-linux-android"
-                      "armv7-linux-androideabi" -> "armv7a-linux-androideabi"
-                      "i686-linux-android" -> "i686-linux-android"
-                      "x86_64-linux-android" -> "x86_64-linux-android"
-                      else -> targetTriple
+                  if (ndkPath.isNotEmpty()) {
+                      val cargoDir = File(rootDir, ".cargo")
+                      cargoDir.mkdirs()
+                      File(cargoDir, "config.toml").writeText("""
+                          [target.${targetTriple}]
+                          linker = "${ndkPath}/toolchains/llvm/prebuilt/linux-x86_64/bin/${targetTriple}24-clang"
+                          ar = "${ndkPath}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
+                      """.trimIndent())
                   }
                   val cargoResult = project.exec {
                       workingDir(rootDir)
@@ -212,12 +215,7 @@ jobs:
                       args("build", "--target", targetTriple, "--profile", profile)
                       args("--verbose")  // surface linker commands and full error context
                       environment("CARGO_TERM_COLOR", "never")
-                      // Set NDK clang as C compiler for Android targets
-                      if (ndkPath.isNotEmpty()) {
-                          environment("CC_${targetTriple.replace("-", "_").uppercase()}", 
-                              "$ndkPath/toolchains/llvm/prebuilt/linux-x86_64/bin/${clangTriple}24-clang")
-                          environment("ANDROID_NDK_ROOT", ndkPath)
-                      }
+                      environment("ANDROID_NDK_ROOT", ndkPath)
                       isIgnoreExitValue = true
                   }
                   if (cargoResult.exitValue != 0) {
@@ -259,6 +257,8 @@ jobs:
           rm -rf .gradle buildSrc/build buildSrc/.gradle 2>/dev/null || true
           # Also bust the parent project's caches that might reference the old BuildTask
           rm -rf /home/runner/.gradle/caches/build-cache-* 2>/dev/null || true
+          # Remove any stale .cargo/config (non-toml) that might override our new config.toml
+          rm -f src-tauri/.cargo/config 2>/dev/null || true
 
       - name: Pre-download Gradle 8.14.4 + point wrapper to local file
         shell: bash
