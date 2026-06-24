@@ -69,6 +69,24 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+          # Explicitly enumerate artifacts to upload. Tauri's
+          # productName ("AI 模型监控") contains non-ASCII characters and
+          # tauri-action@v0's auto-detection can fail to match bundles
+          # with UTF-8 filenames ("No artifacts were found" error). Pin
+          # the patterns by extension — tauri writes bundles under
+          # target/<triple>/release/bundle/{deb,rpm,appimage,msi,nsis}/
+          # for desktop platforms, with a small set of well-known
+          # extensions; we also pick up any `.AppImage.tar.gz` payload
+          # the AppImage bundler emits.
+          artifacts: |
+            src-tauri/target/**/release/bundle/deb/*.deb
+            src-tauri/target/**/release/bundle/rpm/*.rpm
+            src-tauri/target/**/release/bundle/appimage/*.AppImage
+            src-tauri/target/**/release/bundle/appimage/*.AppImage.tar.gz
+            src-tauri/target/**/release/bundle/msi/*.msi
+            src-tauri/target/**/release/bundle/nsis/*.exe
+            src-tauri/target/**/release/bundle/macos/*.app
+            src-tauri/target/**/release/bundle/dmg/*.dmg
 
   # Android APK build. Runs in parallel with `publish`. Uses a custom Gradle
   # pipeline (the tauri-cli 2.11.x quirks around tauri-android subproject
