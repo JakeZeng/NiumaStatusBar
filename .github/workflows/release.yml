@@ -59,6 +59,14 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install
 
+      # Regenerate the icon set from `icons/icon.png` before bundling.
+      # The committed `icons/icon.ico` was generated from PNGs without an
+      # alpha channel; `tauri icon` produces an RGBA-compliant ICO that
+      # `tauri build`'s icon validator accepts on macOS/Windows bundles.
+      # Idempotent — safe to keep in CI.
+      - name: Regenerate app icons
+        run: pnpm tauri icon src-tauri/icons/icon.png
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
