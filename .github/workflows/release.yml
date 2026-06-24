@@ -649,6 +649,43 @@ jobs:
           chmod +x src-tauri/gen/android/gradlew || true
           chmod +x src-tauri/gen/android/gradlew.bat || true
 
+      # Decode the upload keystore from secrets and write keystore.properties
+      # for gradle to pick up. Skipped entirely if the secret is unset, in
+      # which case the APK is unsigned (only useful for local dev).
+      - name: Configure Android signing
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -e
+          KEYSTORE_FILE="$GITHUB_WORKSPACE/release.keystore"
+          echo "$KEYSTORE_B64" | base64 -d > "$KEYSTORE_FILE"
+          chmod 600 "$KEYSTORE_FILE"
+          ls -la "$KEYSTORE_FILE"
+          # app/build.gradle.kts reads `file("keystore.properties")` relative
+          # to the gradle project dir (gen/android/app/), and the storeFile
+          # path inside is also resolved relative to that dir — so we use an
+          # absolute path here to keep the keystore out of the (committed)
+          # gen/android/ tree.
+          cat > src-tauri/gen/android/app/keystore.properties <<EOF
+          storeFile=$KEYSTORE_FILE
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          EOF
+          echo "--- keystore.properties ---"
+          cat src-tauri/gen/android/app/keystore.properties
+          # Smoke-test the keystore so we fail fast with a clear error if
+          # the alias/password don't match (otherwise gradle fails inside
+          # packageRelease with a much more cryptic "Failed to read key" msg).
+          keytool -list -v -keystore "$KEYSTORE_FILE" \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -alias "$KEY_ALIAS" > /dev/null
+          echo "Keystore OK"
+
       - name: Build Android APK
         run: |
           set -e
