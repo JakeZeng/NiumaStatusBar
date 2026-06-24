@@ -150,6 +150,25 @@ jobs:
           cd ..
           pnpm tauri android init --ci
 
+      - name: Disable app-module BuildConfig generation
+        run: |
+          # tauri-cli 2.11's `tauri android init --ci` regenerates
+          # app/build.gradle.kts with `buildFeatures { buildConfig = true }`,
+          # which causes AGP to generate `com.aimonitor.app.BuildConfig` in
+          # the :app module. Our :tauri-android subproject also produces a
+          # `com.aimonitor.app.BuildConfig` (a hand-written stub used by
+          # WRY's Logger.kt — see the Scaffold step), so R8 fails with
+          # "Type … is defined multiple times" when :app links us. Flip
+          # the flag in the generated file. MainActivity.kt doesn't
+          # reference BuildConfig so this is safe.
+          #
+          # app/build.gradle.kts is NOT gitignored, but it IS regenerated
+          # by tauri-cli on every init, so this sed runs after init.
+          sed -i 's/buildConfig = true/buildConfig = false/' \
+              src-tauri/gen/android/app/build.gradle.kts
+          echo "--- app/build.gradle.kts (buildFeatures block) ---"
+          grep -A2 "buildFeatures" src-tauri/gen/android/app/build.gradle.kts || true
+
       - name: Ensure tauri.settings.gradle and tauri.build.gradle.kts exist
         run: |
           set -e
@@ -253,20 +272,25 @@ jobs:
           if [ -f "$TAURI_ANDROID_SRC/proguard-rules.pro" ]; then
               cp "$TAURI_ANDROID_SRC/proguard-rules.pro" "$API/consumer-rules.pro"
           fi
-          # tauri-android's app/tauri/Logger.kt has
-          #   `return BuildConfig.DEBUG`  (unqualified, so resolves to
-          #   app.tauri.BuildConfig).
-          # Our subproject's namespace is `com.aimonitor.app`, so AGP only
-          # generates `com.aimonitor.app.BuildConfig` (for WRY's Logger.kt in
-          # that package). The `app.tauri.BuildConfig` class needs to be
-          # supplied manually. The proper fix would be a separate
-          # :tauri-android gradle subproject (with namespace `app.tauri`),
-          # but that requires a third wiring file plus the cargo-registry
-          # path handling — too invasive. A stub class with the one field
-          # Logger.kt actually reads is enough.
+          # Stub BuildConfig classes for the two source-tree packages that
+          # reference `BuildConfig` unqualified. The subproject's namespace is
+          # `com.aimonitor.app.tauriapi` (NOT com.aimonitor.app, to avoid
+          # colliding with :app's own BuildConfig), so AGP won't generate
+          # any of the packages the source files actually use. Each stub
+          # just exposes the single `DEBUG` field that Logger.shouldLog()
+          # reads. (We can do this because Logger.kt is the only tauri-
+          # android or WRY file that uses BuildConfig; a wider audit would
+          # need a more elaborate stub.)
           mkdir -p "$API/src/main/java/app/tauri"
           cat > "$API/src/main/java/app/tauri/BuildConfig.java" <<'EOF'
           package app.tauri;
+          public final class BuildConfig {
+              public static final boolean DEBUG = false;
+          }
+          EOF
+          mkdir -p "$API/src/main/java/com/aimonitor/app"
+          cat > "$API/src/main/java/com/aimonitor/app/BuildConfig.java" <<'EOF'
+          package com.aimonitor.app;
           public final class BuildConfig {
               public static final boolean DEBUG = false;
           }
@@ -279,7 +303,17 @@ jobs:
               id("org.jetbrains.kotlin.android")
           }
           android {
-              namespace = "com.aimonitor.app"
+              // The namespace MUST be unique to this subproject — if we kept
+              // it as `com.aimonitor.app` (same as the :app module),
+              // AGP-generated `com.aimonitor.app.BuildConfig` would collide
+              // with the app's own BuildConfig when :app links us as a
+              // project dependency (R8 fails with "Type … is defined
+              // multiple times"). WRY and tauri-android source files
+              // reference `BuildConfig` unqualified (resolved against their
+              // own package), so we manually provide two stub BuildConfig
+              // classes (one per package) below; AGP no longer needs to
+              // generate ours.
+              namespace = "com.aimonitor.app.tauriapi"
               compileSdk = 35
               defaultConfig {
                   minSdk = 21
@@ -295,14 +329,15 @@ jobs:
                       )
                   }
               }
-              // WRY's Logger.kt and tauri-android's Logger.kt both reference
-              // `BuildConfig` (e.g. `BuildConfig.DEBUG`). AGP 8 disables
-              // BuildConfig generation by default for libraries — flip it on
-              // explicitly so the generated `com.aimonitor.app.BuildConfig`
-              // class is available in the classpath.
-              buildFeatures {
-                  buildConfig = true
-              }
+              // AGP 8 disables BuildConfig generation by default for
+              // libraries. We intentionally leave it OFF here — the WRY and
+              // tauri-android source files that reference `BuildConfig` use
+              // hand-written stub BuildConfig.java files (in
+              // com/aimonitor/app/ and app/tauri/ respectively) so AGP
+              // doesn't need to generate one. The subproject namespace
+              // `com.aimonitor.app.tauriapi` doesn't appear in any of the
+              // source files, so an auto-generated BuildConfig there would
+              // just be dead weight.
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_1_8
                   targetCompatibility = JavaVersion.VERSION_1_8
