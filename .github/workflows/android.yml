@@ -596,8 +596,11 @@ jobs:
           cd src-tauri
 
           echo "Starting Android APK build..."
-          # Run via the gradle wrapper so we can surface the failure clearly.
-          ./gen/android/gradlew -p gen/android assembleRelease --no-daemon --stacktrace 2>&1 | tee build.log
+          # Build only the arm64 flavor. Tauri's RustPlugin reads `abiList` / `archList`
+          # gradle properties to decide which productFlavors get built; combined with
+          # the per-flavor task `assembleArm64Release`, this avoids producing the
+          # armeabi-v7a / x86 / x86_64 / universal variants we don't need.
+          ./gen/android/gradlew -p gen/android -PabiList=arm64-v8a -ParchList=arm64 assembleArm64Release --no-daemon --stacktrace 2>&1 | tee build.log
           GRADLE_EXIT=${PIPESTATUS[0]}
 
           echo ""
@@ -614,12 +617,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: android-apk-release
-          path: |
-            src-tauri/gen/android/app/build/outputs/apk/arm/release/*.apk
-            src-tauri/gen/android/app/build/outputs/apk/arm64/release/*.apk
-            src-tauri/gen/android/app/build/outputs/apk/x86/release/*.apk
-            src-tauri/gen/android/app/build/outputs/apk/x86_64/release/*.apk
-            src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk
+          path: src-tauri/gen/android/app/build/outputs/apk/arm64/release/*.apk
           retention-days: 30
           if-no-files-found: error
 
@@ -637,11 +635,6 @@ jobs:
         with:
           name: ${{ github.ref_name }}
           generate_release_notes: true
-          files: |
-            src-tauri/gen/android/app/build/outputs/apk/arm/release/*.apk
-            src-tauri/gen/android/app/build/outputs/apk/arm64/release/*.apk
-            src-tauri/gen/android/app/build/outputs/apk/x86/release/*.apk
-            src-tauri/gen/android/app/build/outputs/apk/x86_64/release/*.apk
-            src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk
+          files: src-tauri/gen/android/app/build/outputs/apk/arm64/release/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
