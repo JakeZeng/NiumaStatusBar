@@ -342,6 +342,12 @@ jobs:
                   val targetEnvKey = targetTriple.replace('-', '_')
                   val tauriApiJava = File(cargoRoot, "gen/android/.tauri/tauri-api/src/main/java").absoluteFile
                   tauriApiJava.mkdirs()
+                  // WRY's build.rs (via tauri/build.rs) needs both WRY_ANDROID_KOTLIN_FILES_OUT_DIR
+                  // (where to write the .kt files) and WRY_ANDROID_PACKAGE (the
+                  // Android package id the generated classes are placed in).
+                  // tauri.conf.json's identifier is the canonical source.
+                  val appPackage = project.findProperty("androidPackageId") as String?
+                      ?: "com.aimonitor.app"
 
                   val stdout = java.io.ByteArrayOutputStream()
                   val stderr = java.io.ByteArrayOutputStream()
@@ -359,10 +365,10 @@ jobs:
                           environment("RANLIB_${targetEnvKey}", "$ndkBin/llvm-ranlib")
                           environment("STRIP_${targetEnvKey}", "$ndkBin/llvm-strip")
                       }
-                      // Tell WRY's build script where the :tauri-android subproject
-                      // is so its generated Kotlin source lands where gradle
-                      // compiles it.
+                      // Tell WRY's build script where to write Kotlin source and
+                      // what Android package to put the generated classes in.
                       environment("WRY_ANDROID_KOTLIN_FILES_OUT_DIR", tauriApiJava.absolutePath)
+                      environment("WRY_ANDROID_PACKAGE", appPackage)
                       isIgnoreExitValue = true
                       standardOutput = stdout
                       errorOutput = stderr
