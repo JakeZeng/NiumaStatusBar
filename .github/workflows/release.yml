@@ -228,12 +228,49 @@ jobs:
           # the flag in the generated file. MainActivity.kt doesn't
           # reference BuildConfig so this is safe.
           #
+          # ALSO: tauri-cli 2.11.x's init template doesn't include any
+          # signing config — neither a `signingConfigs { ... }` block nor
+          # a `signingConfig = ...` line in the `release` buildType.
+          # Without it, the release APK is output as `*-unsigned.apk`
+          # even when `keystore.properties` is present. Re-add the
+          # signing logic below.
+          #
           # app/build.gradle.kts is NOT gitignored, but it IS regenerated
-          # by tauri-cli on every init, so this sed runs after init.
-          sed -i 's/buildConfig = true/buildConfig = false/' \
-              src-tauri/gen/android/app/build.gradle.kts
-          echo "--- app/build.gradle.kts (buildFeatures block) ---"
-          grep -A2 "buildFeatures" src-tauri/gen/android/app/build.gradle.kts || true
+          # by tauri-cli on every init, so this patch runs after init.
+          set -e
+          GRADLE_FILE=src-tauri/gen/android/app/build.gradle.kts
+          sed -i 's/buildConfig = true/buildConfig = false/' "$GRADLE_FILE"
+
+          # Re-add `signingConfigs` block after the `namespace = ...` line.
+          # The block reads `keystore.properties` from the app subproject's
+          # dir at gradle script-eval time; if the file is missing (no
+          # secret), the config is left empty and gradle keeps the default
+          # (unsigned) behavior, which is what we want for local-dev.
+          if ! grep -q '^val keystorePropertiesFile' "$GRADLE_FILE"; then
+            sed -i '/^    namespace = /a\
+          \
+              signingConfigs {\
+                  create("release") {\
+                      val ks = file("keystore.properties")\
+                      if (ks.exists()) {\
+                          val p = java.util.Properties()\
+                          ks.inputStream().use { p.load(it) }\
+                          storeFile = file(p["storeFile"] as String)\
+                          storePassword = p["storePassword"] as String\
+                          keyAlias = p["keyAlias"] as String\
+                          keyPassword = p["keyPassword"] as String\
+                      }\
+                  }\
+              }' "$GRADLE_FILE"
+          fi
+
+          # Add `signingConfig = ...` line in the `release` buildType.
+          if ! grep -q 'signingConfig = signingConfigs.getByName("release")' "$GRADLE_FILE"; then
+            sed -i 's/^            isMinifyEnabled = true$/            isMinifyEnabled = true\n            signingConfig = signingConfigs.getByName("release")/' "$GRADLE_FILE"
+          fi
+
+          echo "--- app/build.gradle.kts (buildFeatures + signing blocks) ---"
+          grep -B1 -A15 'signingConfigs\|signingConfig' "$GRADLE_FILE" || true
 
       - name: Ensure tauri.settings.gradle and tauri.build.gradle.kts exist
         run: |
