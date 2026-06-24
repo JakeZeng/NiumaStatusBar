@@ -596,11 +596,12 @@ jobs:
           cd src-tauri
 
           echo "Starting Android APK build..."
-          # Build only the arm64 flavor. Tauri's RustPlugin reads `abiList` / `archList`
-          # gradle properties to decide which productFlavors get built; combined with
-          # the per-flavor task `assembleArm64Release`, this avoids producing the
-          # armeabi-v7a / x86 / x86_64 / universal variants we don't need.
-          ./gen/android/gradlew -p gen/android -PabiList=arm64-v8a -ParchList=arm64 assembleArm64Release --no-daemon --stacktrace 2>&1 | tee build.log
+          # Use `assembleRelease` (not per-flavor task like `assembleArm64Release`).
+          # Tauri's RustPlugin hardcodes 4 arch productFlavors (arm64/arm/x86/x86_64)
+          # and assumes `targetsList` / `archList` stay in sync; passing
+          # `-ParchList=arm64` alone throws `Index: 1, Size: 1` at config time.
+          # So we build all 5 APKs and only upload/release the arm64 one.
+          ./gen/android/gradlew -p gen/android assembleRelease --no-daemon --stacktrace 2>&1 | tee build.log
           GRADLE_EXIT=${PIPESTATUS[0]}
 
           echo ""
