@@ -6,6 +6,8 @@ on:
     branches:
       - 'trae/**'
       - main
+    tags:
+      - 'v*'
     paths:
       - 'src/**'
       - 'src-tauri/**'
@@ -628,3 +630,18 @@ jobs:
           name: build-log
           path: src-tauri/build.log
           retention-days: 7
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            src-tauri/gen/android/app/build/outputs/apk/arm/release/*.apk
+            src-tauri/gen/android/app/build/outputs/apk/arm64/release/*.apk
+            src-tauri/gen/android/app/build/outputs/apk/x86/release/*.apk
+            src-tauri/gen/android/app/build/outputs/apk/x86_64/release/*.apk
+            src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
