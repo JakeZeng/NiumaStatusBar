@@ -2,18 +2,6 @@ name: Android APK
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - 'trae/**'
-      - main
-    tags:
-      - 'v*'
-    paths:
-      - 'src/**'
-      - 'src-tauri/**'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - '.github/workflows/android.yml'
 
 jobs:
   android:
@@ -631,7 +619,7 @@ jobs:
           retention-days: 7
 
       - name: Create GitHub Release (draft)
-        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ github.ref_name }}
