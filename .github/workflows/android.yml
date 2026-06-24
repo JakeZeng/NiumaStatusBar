@@ -215,13 +215,16 @@ jobs:
           #      subproject's `src/main/java/app/…` to keep the wiring simple.
           #      All `import app.tauri.plugin.PluginManager` etc. resolve fine
           #      because the source files are in the same Gradle source set.
-          API=src-tauri/gen/android/.tauri/tauri-api
-          mkdir -p "$API/src/main/java"
+          # The path is relative to src-tauri/ (we cd there before using it),
+          # because that's the directory whose Cargo.lock + .cargo/config.toml
+          # cargo will read.
+          API=gen/android/.tauri/tauri-api
           # Locate tauri-android via cargo metadata (path resolves into the
           # cargo registry; not in the project tree). Don't pass --no-deps
           # because tauri is a *dependency* of the user's crate, not the
           # local crate itself — --no-deps would omit it from the output.
           cd src-tauri
+          mkdir -p "$API/src/main/java"
           TAURI_CRATE=$(cargo metadata --format-version=1 2>/dev/null \
               | python3 -c "import json,sys; d=json.load(sys.stdin); \
                   p=[x for x in d.get('packages',[]) if x['name']=='tauri']; \
@@ -250,7 +253,8 @@ jobs:
           if [ -f "$TAURI_ANDROID_SRC/proguard-rules.pro" ]; then
               cp "$TAURI_ANDROID_SRC/proguard-rules.pro" "$API/consumer-rules.pro"
           fi
-          cd ..
+          # Stay in src-tauri/ — $API and the find/cat commands below all use
+          # paths relative to src-tauri/.
           cat > "$API/build.gradle.kts" <<'EOF'
           plugins {
               id("com.android.library")
