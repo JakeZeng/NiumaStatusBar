@@ -170,11 +170,15 @@ jobs:
           # (line 91 vs the block closing on line 89), so this file is compiled as
           # a standalone script — `implementation` (which lives on the
           # DependencyHandler receiver) is unresolved at script-compile time.
-          # Use the string-based DSL accessor instead, which doesn't need the
-          # receiver and works in any context.
+          # The fix is the same as what tauri-build's `generate_gradle_files`
+          # does (see crates/tauri-build/src/mobile.rs in the tauri repo):
+          # bring `implementation` into scope as a top-level val by
+          # delegating to the `configurations` container, then use it inside
+          # `dependencies { }` as if it were a method.
           cat > "$ROOT/app/tauri.build.gradle.kts" <<'EOF'
+          val implementation by configurations
           dependencies {
-              "implementation"(project(":tauri-android"))
+              implementation(project(":tauri-android"))
           }
           EOF
 
@@ -193,11 +197,58 @@ jobs:
           # gradle scaffolding. So we create the gradle files here. WRY fills
           # in the Kotlin source (TauriActivity.kt etc.) at cargo build time.
           #
-          # namespace MUST match the user's app package id, otherwise
-          # TauriActivity ends up in the wrong package and MainActivity
-          # (which uses the unqualified name) can't find it.
+          # We host EVERYTHING the :app module needs to compile in this one
+          # subproject:
+          #   1. WRY-generated files (RustWebViewClient.kt, WryActivity.kt, ...)
+          #      — written by WRY's build.rs into WRY_ANDROID_KOTLIN_FILES_OUT_DIR
+          #      at cargo build time. We point that env var at
+          #      `…/src/main/java/com/aimonitor/app` so the WRY files land
+          #      under a directory that matches their `package com.aimonitor.app`
+          #      declaration (kotlinc requires dir == package).
+          #   2. Tauri-codegen files (TauriActivity.kt) — same OUT_DIR, same package.
+          #   3. Tauri's pre-existing Android source (PluginManager.kt, etc.,
+          #      from `tauri` crate's `mobile/android/src/main/java/`). The
+          #      tauri-android library normally ships as a separate Gradle
+          #      subproject (`:tauri-android`), but setting that up requires
+          #      writing a third sub-build.gradle.kts (also gitignored by
+          #      tauri-cli init), so we copy the pre-existing source into this
+          #      subproject's `src/main/java/app/…` to keep the wiring simple.
+          #      All `import app.tauri.plugin.PluginManager` etc. resolve fine
+          #      because the source files are in the same Gradle source set.
           API=src-tauri/gen/android/.tauri/tauri-api
           mkdir -p "$API/src/main/java"
+          # Locate tauri-android via cargo metadata (path resolves into the
+          # cargo registry; not in the project tree).
+          cd src-tauri
+          TAURI_CRATE=$(cargo metadata --format-version=1 --no-deps 2>/dev/null \
+              | python3 -c "import json,sys; d=json.load(sys.stdin); \
+                  p=[x for x in d['packages'] if x['name']=='tauri']; \
+                  print(p[0]['manifest_path'] if p else '')")
+          if [ -z "$TAURI_CRATE" ]; then
+              echo "ERROR: could not locate tauri crate manifest via cargo metadata" >&2
+              exit 1
+          fi
+          TAURI_ANDROID_SRC="$(dirname "$TAURI_CRATE")/mobile/android"
+          echo "Tauri crate manifest: $TAURI_CRATE"
+          echo "Tauri-android source : $TAURI_ANDROID_SRC"
+          if [ ! -d "$TAURI_ANDROID_SRC/src/main/java" ]; then
+              echo "ERROR: $TAURI_ANDROID_SRC/src/main/java does not exist" >&2
+              exit 1
+          fi
+          # Copy tauri-android's pre-existing Kotlin source into our subproject.
+          # Tauri-android's own build.gradle.kts is NOT copied — our subproject
+          # has its own build.gradle.kts (below) that declares the combined
+          # dependency set (WRY + tauri-android).
+          cp -r "$TAURI_ANDROID_SRC/src/main/java/." "$API/src/main/java/"
+          # Also copy tauri-android's proguard keep rules so the app module
+          # (which has isMinifyEnabled = true) doesn't strip our
+          # @app.tauri.JniMethod native methods at release-build time. The
+          # consumer-rules.pro is auto-included in the app's proguard config
+          # via the Gradle project dependency.
+          if [ -f "$TAURI_ANDROID_SRC/proguard-rules.pro" ]; then
+              cp "$TAURI_ANDROID_SRC/proguard-rules.pro" "$API/consumer-rules.pro"
+          fi
+          cd ..
           cat > "$API/build.gradle.kts" <<'EOF'
           plugins {
               id("com.android.library")
@@ -229,9 +280,20 @@ jobs:
               }
           }
           dependencies {
-              implementation("androidx.core:core-ktx:1.9.0")
-              implementation("androidx.appcompat:appcompat:1.6.0")
-              implementation("com.google.android.material:material:1.7.0")
+              implementation("androidx.core:core-ktx:1.13.1")
+              implementation("androidx.appcompat:appcompat:1.7.0")
+              implementation("com.google.android.material:material:1.12.0")
+              // Required by WRY-generated RustWebViewClient.kt (uses WebViewAssetLoader).
+              implementation("androidx.webkit:webkit:1.11.0")
+              // Required by WRY-generated TauriActivity.kt + WryActivity.kt
+              // (uses androidx.lifecycle.ProcessLifecycleOwner).
+              implementation("androidx.lifecycle:lifecycle-process:2.8.4")
+              implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.4")
+              implementation("androidx.activity:activity-ktx:1.9.1")
+              // Required by tauri-android's PluginManager.kt (Jackson JSON).
+              implementation("com.fasterxml.jackson.core:jackson-databind:2.15.3")
+              implementation("com.fasterxml.jackson.core:jackson-core:2.15.3")
+              implementation("com.fasterxml.jackson.core:jackson-annotations:2.15.3")
               testImplementation("junit:junit:4.13.2")
               androidTestImplementation("androidx.test.ext:junit:1.1.5")
               androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
@@ -243,9 +305,14 @@ jobs:
           </manifest>
           EOF
           : > "$API/proguard-rules.pro"
-          : > "$API/consumer-rules.pro"
+          # consumer-rules.pro was populated by the cp above (tauri-android's
+          # proguard rules); only truncate it as a fallback.
+          [ -s "$API/consumer-rules.pro" ] || : > "$API/consumer-rules.pro"
           echo "--- tauri-api scaffold ---"
-          find "$API" -type f
+          find "$API" -type f | sort
+          echo "--- copy of tauri-android source ---"
+          find "$TAURI_ANDROID_SRC/src/main/java" -type f | wc -l
+          echo "files copied"
 
       - name: Patch BuildTask to bypass tauri-cli android-studio-script
         run: |
@@ -340,17 +407,11 @@ jobs:
                   // cargo at the right NDK clang. This is a no-op for targets
                   // where the names already match.
                   val targetEnvKey = targetTriple.replace('-', '_')
-                  val tauriApiJava = File(cargoRoot, "gen/android/.tauri/tauri-api/src/main/java").absoluteFile
-                  tauriApiJava.mkdirs()
-                  // WRY's build.rs (via tauri/build.rs) needs BOTH env vars
+                  // WRY's build.rs (via tauri/build.rs) needs these env vars
                   // to generate the Kotlin source files:
                   //   WRY_ANDROID_KOTLIN_FILES_OUT_DIR = where to write the .kt files
                   //   WRY_ANDROID_PACKAGE              = the Android package id
                   //   WRY_ANDROID_LIBRARY              = the cdylib crate name
-                  //                                          (used as e.g.
-                  //                                          "loadLibrary(\"…\")"
-                  //                                          in the generated
-                  //                                          BridgeActivity)
                   // tauri.conf.json's identifier is the canonical source for the
                   // package id; Cargo.toml's [lib] name is the canonical source
                   // for the library name.
@@ -358,6 +419,17 @@ jobs:
                       ?: "com.aimonitor.app"
                   val androidLib = project.findProperty("androidLibraryName") as String?
                       ?: "ai_model_monitor_lib"
+                  // WRY writes files FLAT in WRY_ANDROID_KOTLIN_FILES_OUT_DIR
+                  // (just `kotlin_out_dir.join(file.file_name())`, no package
+                  // subdirs), but each file has `package <appPackage>` from the
+                  // `{{package}}` template substitution. Kotlinc requires
+                  // directory == package, so we append the package-as-path to
+                  // the OUT_DIR — the files then land at
+                  // `…/<package-as-path>/<Name>.kt` and the package
+                  // declaration matches.
+                  val tauriApiJavaRoot = File(cargoRoot, "gen/android/.tauri/tauri-api/src/main/java").absoluteFile
+                  val tauriApiJava = File(tauriApiJavaRoot, appPackage.replace('.', '/')).absoluteFile
+                  tauriApiJava.mkdirs()
 
                   val stdout = java.io.ByteArrayOutputStream()
                   val stderr = java.io.ByteArrayOutputStream()
@@ -457,10 +529,16 @@ jobs:
           echo "Starting Android APK build..."
           # Run via the gradle wrapper so we can surface the failure clearly.
           ./gen/android/gradlew -p gen/android assembleRelease --no-daemon --stacktrace 2>&1 | tee build.log
+          GRADLE_EXIT=${PIPESTATUS[0]}
 
+          echo ""
+          echo "=== WRY/Tauri generated Kotlin sources (post-build) ==="
+          find gen/android/.tauri/tauri-api/src -type f 2>/dev/null | sort
           echo ""
           echo "=== Build outputs ==="
           find gen/android/app/build/outputs -name "*.apk" -type f -ls || echo "No APK found!"
+
+          exit $GRADLE_EXIT
 
       - name: Upload APK (debug)
         if: success()
