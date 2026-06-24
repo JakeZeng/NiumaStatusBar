@@ -612,7 +612,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: android-apk-release
-          path: src-tauri/gen/android/app/build/outputs/apk/release/*.apk
+          path: |
+            src-tauri/gen/android/app/build/outputs/apk/arm/release/*.apk
+            src-tauri/gen/android/app/build/outputs/apk/arm64/release/*.apk
+            src-tauri/gen/android/app/build/outputs/apk/x86/release/*.apk
+            src-tauri/gen/android/app/build/outputs/apk/x86_64/release/*.apk
+            src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk
           retention-days: 30
           if-no-files-found: error
 
