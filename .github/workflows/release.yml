@@ -652,8 +652,11 @@ jobs:
       # Decode the upload keystore from secrets and write keystore.properties
       # for gradle to pick up. Skipped entirely if the secret is unset, in
       # which case the APK is unsigned (only useful for local dev).
+      # NOTE: `secrets.*` cannot be referenced in `if:` (GitHub Actions
+      # blocks it to avoid leaking secret existence), so we always run
+      # this step and bail out early inside the script when the secret
+      # is missing.
       - name: Configure Android signing
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -661,6 +664,10 @@ jobs:
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -e
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "ANDROID_KEYSTORE_BASE64 is empty — skipping signing (APK will be unsigned)"
+            exit 0
+          fi
           KEYSTORE_FILE="$GITHUB_WORKSPACE/release.keystore"
           echo "$KEYSTORE_B64" | base64 -d > "$KEYSTORE_FILE"
           chmod 600 "$KEYSTORE_FILE"
