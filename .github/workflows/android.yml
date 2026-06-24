@@ -253,6 +253,24 @@ jobs:
           if [ -f "$TAURI_ANDROID_SRC/proguard-rules.pro" ]; then
               cp "$TAURI_ANDROID_SRC/proguard-rules.pro" "$API/consumer-rules.pro"
           fi
+          # tauri-android's app/tauri/Logger.kt has
+          #   `return BuildConfig.DEBUG`  (unqualified, so resolves to
+          #   app.tauri.BuildConfig).
+          # Our subproject's namespace is `com.aimonitor.app`, so AGP only
+          # generates `com.aimonitor.app.BuildConfig` (for WRY's Logger.kt in
+          # that package). The `app.tauri.BuildConfig` class needs to be
+          # supplied manually. The proper fix would be a separate
+          # :tauri-android gradle subproject (with namespace `app.tauri`),
+          # but that requires a third wiring file plus the cargo-registry
+          # path handling — too invasive. A stub class with the one field
+          # Logger.kt actually reads is enough.
+          mkdir -p "$API/src/main/java/app/tauri"
+          cat > "$API/src/main/java/app/tauri/BuildConfig.java" <<'EOF'
+          package app.tauri;
+          public final class BuildConfig {
+              public static final boolean DEBUG = false;
+          }
+          EOF
           # Stay in src-tauri/ — $API and the find/cat commands below all use
           # paths relative to src-tauri/.
           cat > "$API/build.gradle.kts" <<'EOF'
@@ -276,6 +294,14 @@ jobs:
                           "proguard-rules.pro"
                       )
                   }
+              }
+              // WRY's Logger.kt and tauri-android's Logger.kt both reference
+              // `BuildConfig` (e.g. `BuildConfig.DEBUG`). AGP 8 disables
+              // BuildConfig generation by default for libraries — flip it on
+              // explicitly so the generated `com.aimonitor.app.BuildConfig`
+              // class is available in the classpath.
+              buildFeatures {
+                  buildConfig = true
               }
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_1_8
