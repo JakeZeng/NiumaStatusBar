@@ -218,11 +218,13 @@ jobs:
           API=src-tauri/gen/android/.tauri/tauri-api
           mkdir -p "$API/src/main/java"
           # Locate tauri-android via cargo metadata (path resolves into the
-          # cargo registry; not in the project tree).
+          # cargo registry; not in the project tree). Don't pass --no-deps
+          # because tauri is a *dependency* of the user's crate, not the
+          # local crate itself — --no-deps would omit it from the output.
           cd src-tauri
-          TAURI_CRATE=$(cargo metadata --format-version=1 --no-deps 2>/dev/null \
+          TAURI_CRATE=$(cargo metadata --format-version=1 2>/dev/null \
               | python3 -c "import json,sys; d=json.load(sys.stdin); \
-                  p=[x for x in d['packages'] if x['name']=='tauri']; \
+                  p=[x for x in d.get('packages',[]) if x['name']=='tauri']; \
                   print(p[0]['manifest_path'] if p else '')")
           if [ -z "$TAURI_CRATE" ]; then
               echo "ERROR: could not locate tauri crate manifest via cargo metadata" >&2
