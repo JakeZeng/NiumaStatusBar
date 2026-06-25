@@ -245,6 +245,20 @@ jobs:
           # the flag in the generated file. MainActivity.kt doesn't
           # reference BuildConfig so this is safe.
           #
+          # ALSO: tauri-cli 2.11.x pins `proguard-android-optimize.txt`
+          # as the default proguard file, which enables R8's aggressive
+          # optimization pass (vertical method merging, etc). That pass
+          # sees `MainActivity.getId()` as a trivial override that just
+          # forwards to `super.getId()`, inlines it, and strips the
+          # declaration — even when we have `@Keep` + `-keep class { *; }`
+          # in our proguard-rules.pro. The stripped method makes
+          # `Rust.wryCreate`'s JNI call to `activity.getId()` fail with
+          # `NoSuchMethodError: Lcom/aimonitor/app/MainActivity;.getId()I`
+          # and the app crashes on launch. Switch to the non-optimize
+          # default (`proguard-android.txt`); the size/perf delta is
+          # tiny for our app and WRY's `proguard-wry.pro` already keeps
+          # the rest of the JNI surface.
+          #
           # ALSO: tauri-cli 2.11.x's init template doesn't include any
           # signing config — neither a `signingConfigs { ... }` block nor
           # a `signingConfig = ...` line in the `release` buildType.
@@ -257,6 +271,12 @@ jobs:
           set -e
           GRADLE_FILE=src-tauri/gen/android/app/build.gradle.kts
           sed -i 's/buildConfig = true/buildConfig = false/' "$GRADLE_FILE"
+          # Switch the default proguard file from the optimize variant to
+          # the non-optimize variant. See block comment above for why.
+          if grep -q 'proguard-android-optimize.txt' "$GRADLE_FILE"; then
+            sed -i 's|proguard-android-optimize.txt|proguard-android.txt|' "$GRADLE_FILE"
+            echo "Patched $GRADLE_FILE: proguard-android-optimize.txt -> proguard-android.txt"
+          fi
 
           # Re-add `signingConfigs` block after the `namespace = ...` line.
           # The block reads `keystore.properties` from the app subproject's
