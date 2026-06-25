@@ -296,23 +296,47 @@ jobs:
           grep -B1 -A15 'signingConfigs\|signingConfig' "$GRADLE_FILE" || true
 
           # WRY v0.55.1 (`wry/src/android/mod.rs:117`, `binding.rs:277`) calls
-          # `activity.getId()` / `setId()` from Rust.wryCreate and
-          # onWebviewDestroy. The `WryActivity.var id: Int = 0` property
-          # generates the accessors, but R8 inlines the property accessor in
-          # release builds and strips the getter, crashing the app on launch
-          # with NoSuchMethodError. Fix: a `-keepclassmembers` rule for
-          # WryActivity's getId()/setId() is committed at
-          # src-tauri/gen/android/app/proguard-rules.pro (AGP picks it up
-          # via `*fileTree(".") { include("**/*.pro") }` in build.gradle.kts).
-          # Earlier CI attempts also injected `fun getId()` into
-          # MainActivity — that collides with WryActivity's auto-generated
-          # getId() and kotlinc rejects it with "Accidental override". Strip
-          # any leftover injection from the template-generated file. Remove
-          # this whole step once we move off tauri 2.11.3 (which pins wry
-          # 0.55.1).
+          # `activity.getId()` / `activity.setId(int)` by JNI name. WryActivity
+          # (wry/src/android/kotlin/WryActivity.kt:47) declares
+          # `var id: Int = 0` as a public FINAL property, so MainActivity
+          # inherits the accessors but does not redeclare them, and JNI's
+          # `GetMethodID` (which only walks the receiver class's declared
+          # methods, not the vtable) fails with
+          # `NoSuchMethodError: Lcom/aimonitor/app/MainActivity;.getId()I`,
+          # crashing the app on launch.
+          #
+          # Fix: shadow the inherited property in MainActivity with a fresh
+          # `var id: Int = 0` — Kotlin compiles it to declared `getId()` /
+          # `setId(int)` methods on MainActivity's own method table, which
+          # R8 + JNI can then resolve. ProGuard rules in
+          # `src-tauri/gen/android/app/proguard-rules.pro` keep the
+          # shadowed accessors (without them R8 strips them as unused in
+          # release builds, reproducing the crash). Strip any leftover
+          # `fun getId()` from earlier CI attempts — those were a different
+          # (broken) approach that triggered kotlinc "Accidental override".
+          # Remove this whole step once we move off tauri 2.11.3 (which
+          # pins wry 0.55.1).
           MAIN_ACTIVITY=src-tauri/gen/android/app/src/main/java/com/aimonitor/app/MainActivity.kt
-          if [ -f "$MAIN_ACTIVITY" ] && grep -q 'fun getId' "$MAIN_ACTIVITY"; then
-            sed -i '/^  fun getId(): Int = hashCode()$/d' "$MAIN_ACTIVITY"
+          if [ -f "$MAIN_ACTIVITY" ]; then
+            # 1. Drop any stale `fun getId(): Int = hashCode()` from prior
+            #    CI attempts so kotlinc doesn't choke on "Accidental override".
+            if grep -q 'fun getId' "$MAIN_ACTIVITY"; then
+              sed -i '/^  fun getId(): Int = hashCode()$/d' "$MAIN_ACTIVITY"
+            fi
+            # 2. Inject the property shadow. We can't use `override var id`
+            #    because the parent property is final, so the compiler
+            #    refuses (`'id' is not open`). Plain `var id: Int = 0`
+            #    produces a "name shadowing" warning (suppressed) and
+            #    generates the needed getId()/setId(int) bytecode on
+            #    MainActivity's method table. Anchor on the class
+            #    closing brace (`^}$` at 0 indent) so we don't grab the
+            #    inner `onCreate` close at 2-indent.
+            if ! grep -q '^  @Suppress("NAME_SHADOWING")' "$MAIN_ACTIVITY" \
+               && ! grep -q '^  var id: Int' "$MAIN_ACTIVITY"; then
+              sed -i 's|^}$|  @Suppress("NAME_SHADOWING")\n  var id: Int = 0\n}|' "$MAIN_ACTIVITY"
+            fi
+            echo "--- MainActivity.kt (after WRY getId() shadow) ---"
+            cat "$MAIN_ACTIVITY"
           fi
 
       - name: Ensure tauri.settings.gradle and tauri.build.gradle.kts exist
