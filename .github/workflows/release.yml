@@ -295,6 +295,43 @@ jobs:
           echo "--- app/build.gradle.kts (buildFeatures + signing blocks) ---"
           grep -B1 -A15 'signingConfigs\|signingConfig' "$GRADLE_FILE" || true
 
+          # Patch MainActivity.kt to work around a WRY v0.55.1 bug.
+          # WRY's `Rust.wryCreate` JNI function (wry/src/android/mod.rs:117) calls
+          # `activity.getId()` to derive an internal `activity_id`, but `Activity`
+          # has no `getId()` (it's a `View` method) — the JNI throws
+          # `NoSuchMethodError` during the Rust bridge's `<clinit>`, crashing
+          # the app on launch. Override `getId()` here to return a stable
+          # per-instance int. Safe to remove once we move off tauri 2.11.3
+          # (which pins wry 0.55.1).
+          MAIN_ACTIVITY=src-tauri/gen/android/app/src/main/java/com/aimonitor/app/MainActivity.kt
+          if [ -f "$MAIN_ACTIVITY" ] && ! grep -q 'override fun getId' "$MAIN_ACTIVITY"; then
+            python3 - "$MAIN_ACTIVITY" <<'PYEOF'
+import sys, re
+p = sys.argv[1]
+with open(p) as f:
+    s = f.read()
+# Insert a getId() override at the top of the class body. WRY v0.55.1
+# (wry/src/android/mod.rs:117) calls activity.getId() from Rust.wryCreate
+# (invoked during the Rust bridge's <clinit>), but Activity has no
+# getId() — that's a View method. The JNI call throws NoSuchMethodError
+# and the app crashes on launch. Override getId() to return a stable
+# per-instance int. Safe to drop once we move off tauri 2.11.3 (which
+# pins wry 0.55.1).
+patched = re.sub(
+    r'(class MainActivity : TauriActivity\(\) \{\n)',
+    r'\1  override fun getId(): Int = hashCode()\n',
+    s,
+    count=1,
+)
+if patched == s:
+    raise SystemExit(f"MainActivity class header not matched in {p}")
+with open(p, 'w') as f:
+    f.write(patched)
+PYEOF
+            echo "--- MainActivity.kt (after WRY getId() workaround) ---"
+            cat "$MAIN_ACTIVITY"
+          fi
+
       - name: Ensure tauri.settings.gradle and tauri.build.gradle.kts exist
         run: |
           set -e
