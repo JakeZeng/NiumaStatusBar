@@ -297,7 +297,7 @@ jobs:
 
           # WRY v0.55.1 (`wry/src/android/mod.rs:117`, `binding.rs:277`) calls
           # `activity.getId()` / `activity.setId(int)` by JNI name. WryActivity
-          # (wry/src/android/kotlin/WryActivity.kt:47) declares
+          # (wry/src/android/kotlin/WryActivity.kt:51) declares
           # `var id: Int = 0` as a public FINAL property, so MainActivity
           # inherits the accessors but does not redeclare them, and JNI's
           # `GetMethodID` (which only walks the receiver class's declared
@@ -305,12 +305,13 @@ jobs:
           # `NoSuchMethodError: Lcom/aimonitor/app/MainActivity;.getId()I`,
           # crashing the app on launch.
           #
-          # Fix: shadow the inherited property in MainActivity with a fresh
-          # `var id: Int = 0` — Kotlin compiles it to declared `getId()` /
-          # `setId(int)` methods on MainActivity's own method table, which
-          # R8 + JNI can then resolve. ProGuard rules in
-          # `src-tauri/gen/android/app/proguard-rules.pro` keep the
-          # shadowed accessors (without them R8 strips them as unused in
+          # Fix: (a) a later step (`Patch WryActivity.kt to make var id open`)
+          # turns WryActivity's `var id: Int = 0` into `open var id: Int = 0`
+          # so the next step can override it; (b) MainActivity overrides
+          # `var id: Int = 0`, which gives the MainActivity class its own
+          # declared `getId()` / `setId(int)` methods for JNI to find.
+          # ProGuard rules in `src-tauri/gen/android/app/proguard-rules.pro`
+          # keep the accessors (without them R8 strips them as unused in
           # release builds, reproducing the crash). Strip any leftover
           # `fun getId()` from earlier CI attempts — those were a different
           # (broken) approach that triggered kotlinc "Accidental override".
@@ -323,19 +324,29 @@ jobs:
             if grep -q 'fun getId' "$MAIN_ACTIVITY"; then
               sed -i '/^  fun getId(): Int = hashCode()$/d' "$MAIN_ACTIVITY"
             fi
-            # 2. Inject the property shadow. We can't use `override var id`
-            #    because the parent property is final, so the compiler
-            #    refuses (`'id' is not open`). Plain `var id: Int = 0`
-            #    produces a "name shadowing" warning (suppressed) and
-            #    generates the needed getId()/setId(int) bytecode on
-            #    MainActivity's method table. Anchor on the class
-            #    closing brace (`^}$` at 0 indent) so we don't grab the
-            #    inner `onCreate` close at 2-indent.
-            if ! grep -q '^  @Suppress("NAME_SHADOWING")' "$MAIN_ACTIVITY" \
-               && ! grep -q '^  var id: Int' "$MAIN_ACTIVITY"; then
-              sed -i 's|^}$|  @Suppress("NAME_SHADOWING")\n  var id: Int = 0\n}|' "$MAIN_ACTIVITY"
+            # 2. Drop the stale property shadow from v0.1.10 — it triggers
+            #    kotlinc "'id' hides member of supertype 'TauriActivity' and
+            #    needs 'override' modifier" (Kotlin treats hide-parent-final
+            #    as an error, not a warning). The Patch-WryActivity step
+            #    below turns the parent property into `open`, so we can
+            #    then `override var id` legitimately.
+            if grep -q '^  @Suppress("NAME_SHADOWING")' "$MAIN_ACTIVITY"; then
+              sed -i '/^  @Suppress("NAME_SHADOWING")$/d' "$MAIN_ACTIVITY"
             fi
-            echo "--- MainActivity.kt (after WRY getId() shadow) ---"
+            if grep -q '^  var id: Int = 0$' "$MAIN_ACTIVITY"; then
+              sed -i '/^  var id: Int = 0$/d' "$MAIN_ACTIVITY"
+            fi
+            # 3. Inject `override var id: Int = 0`. The parent property
+            #    must already be `open` at this point (the Patch step
+            #    runs later, but `tauri android init --ci` regenerates
+            #    MainActivity BEFORE cargo build writes WryActivity.kt,
+            #    so we can't rely on a same-run check here — the
+            #    Patch-WryActivity step ensures the open modifier is
+            #    present by the time kotlinc runs).
+            if ! grep -q '^  override var id: Int = 0$' "$MAIN_ACTIVITY"; then
+              sed -i 's|^}$|  override var id: Int = 0\n}|' "$MAIN_ACTIVITY"
+            fi
+            echo "--- MainActivity.kt (after WRY getId() override) ---"
             cat "$MAIN_ACTIVITY"
           fi
 
@@ -745,6 +756,32 @@ jobs:
         run: |
           chmod +x src-tauri/gen/android/gradlew || true
           chmod +x src-tauri/gen/android/gradlew.bat || true
+
+      - name: Patch WryActivity.kt to make `var id` open
+        run: |
+          set -e
+          # WRY 0.55.1's WryActivity declares `var id: Int = 0` as a public
+          # FINAL property (wry/src/android/kotlin/WryActivity.kt:51). The
+          # JNI code (wry/src/android/mod.rs:117, binding.rs:277) calls
+          # `activity.getId()` / `setId(int)` by name, and JNI's
+          # `GetMethodID` only walks the receiver class's declared
+          # methods — not the vtable. MainActivity's `override var id`
+          # inject is in a previous step; for it to compile, the parent
+          # property must be `open`. WRY's build.rs wrote WryActivity.kt
+          # into the path below during the cargo build above, so patch
+          # it in place.
+          WRY_ACTIVITY=src-tauri/gen/android/.tauri/tauri-api/src/main/java/com/aimonitor/app/WryActivity.kt
+          if [ ! -f "$WRY_ACTIVITY" ]; then
+            echo "ERROR: $WRY_ACTIVITY not found — WRY build.rs did not run?" >&2
+            exit 1
+          fi
+          if ! grep -q '^    open var id' "$WRY_ACTIVITY"; then
+            sed -i 's|^    var id: Int = 0$|    open var id: Int = 0|' "$WRY_ACTIVITY"
+          fi
+          echo "--- WryActivity.kt (id open patch applied) ---"
+          grep -nE 'open var id|^    var id' "$WRY_ACTIVITY" || true
+          echo "--- WryActivity.kt (full) ---"
+          cat "$WRY_ACTIVITY"
 
       # Decode the upload keystore from secrets and write keystore.properties
       # for gradle to pick up. Skipped entirely if the secret is unset, in
