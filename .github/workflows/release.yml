@@ -264,13 +264,19 @@ jobs:
           # secret), the config is left empty and gradle keeps the default
           # (unsigned) behavior, which is what we want for local-dev.
           if ! grep -q '^val keystorePropertiesFile' "$GRADLE_FILE"; then
+            # NOTE: we use `Properties()` (unqualified), not `java.util.Properties()`.
+            # The file already has `import java.util.Properties` at the top, so the
+            # bare class name is in scope. The fully qualified form fails to resolve
+            # in the signingConfigs/AGP DSL-marker context — the compiler tries to
+            # look up `util` as a member of the surrounding `SigningConfig` receiver
+            # and reports "Unresolved reference: util" at `java.util.Properties()`.
             sed -i '/^    namespace = /a\
           \
               signingConfigs {\
                   create("release") {\
                       val ks = file("keystore.properties")\
                       if (ks.exists()) {\
-                          val p = java.util.Properties()\
+                          val p = Properties()\
                           ks.inputStream().use { p.load(it) }\
                           storeFile = file(p.getProperty("storeFile"))\
                           storePassword = p.getProperty("storePassword")\
