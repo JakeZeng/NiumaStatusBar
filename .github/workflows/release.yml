@@ -300,18 +300,24 @@ jobs:
           # `activity.getId()` to derive an internal `activity_id`, but `Activity`
           # has no `getId()` (it's a `View` method) — the JNI throws
           # `NoSuchMethodError` during the Rust bridge's `<clinit>`, crashing
-          # the app on launch. Override `getId()` here to return a stable
-          # per-instance int. Safe to remove once we move off tauri 2.11.3
-          # (which pins wry 0.55.1).
+          # the app on launch. Add a plain `fun getId()` to MainActivity
+          # returning a stable per-instance int so WRY can register the
+          # activity. Safe to remove once we move off tauri 2.11.3 (which
+          # pins wry 0.55.1).
           MAIN_ACTIVITY=src-tauri/gen/android/app/src/main/java/com/aimonitor/app/MainActivity.kt
-          if [ -f "$MAIN_ACTIVITY" ] && ! grep -q 'override fun getId' "$MAIN_ACTIVITY"; then
+          if [ -f "$MAIN_ACTIVITY" ] && ! grep -q 'fun getId()' "$MAIN_ACTIVITY"; then
             # WRY v0.55.1 (wry/src/android/mod.rs:117) calls activity.getId()
             # from Rust.wryCreate (invoked during the Rust bridge's <clinit>),
             # but Activity has no getId() — that's a View method. The JNI
-            # throws NoSuchMethodError and the app crashes on launch. Override
-            # getId() to return a stable per-instance int. Drop this once we
-            # move off tauri 2.11.3 (which pins wry 0.55.1).
-            sed -i 's|^class MainActivity : TauriActivity() {$|&\n  override fun getId(): Int = hashCode()|' "$MAIN_ACTIVITY"
+            # throws NoSuchMethodError and the app crashes on launch. Add
+            # getId() to MainActivity returning a stable per-instance int so
+            # WRY can register the activity. NOTE: must be plain `fun`, NOT
+            # `override fun` — `Activity` has no getId() so there's nothing
+            # to override; kotlinc rejects `override fun getId()` with
+            # "'getId' overrides nothing". The JNI lookup is by name, so a
+            # plain method works fine. Drop this once we move off tauri
+            # 2.11.3 (which pins wry 0.55.1).
+            sed -i 's|^class MainActivity : TauriActivity() {$|&\n  fun getId(): Int = hashCode()|' "$MAIN_ACTIVITY"
             echo "--- MainActivity.kt (after WRY getId() workaround) ---"
             cat "$MAIN_ACTIVITY"
           fi
