@@ -23,29 +23,32 @@
 # --- WRY v0.55.1 JNI keep rule (NiumaStatusBar workaround) ---
 # WRY 0.55.1's `Rust.wryCreate` (wry/src/android/mod.rs:117) and
 # `onWebviewDestroy` (wry/src/android/binding.rs:277) look up
-# `activity.getId()` / `activity.setId(int)` by JNI name. WryActivity
-# (wry/src/android/kotlin/WryActivity.kt:47) defines `var id: Int = 0`
-# as a public final property; MainActivity inherits but does not
-# redeclare it, so the JVM method table on `MainActivity` itself is
-# empty for `getId`/`setId`. JNI's `GetMethodID` only searches the
-# declared methods of the receiver class (no vtable walk), so the call
-# fails with `NoSuchMethodError: Lcom/aimonitor/app/MainActivity;.getId()I`
-# and crashes on launch.
+# `activity.getId()` / `activity.setId(int)` by JNI name. The receiver
+# is a MainActivity instance, but JNI's `GetMethodID` (called inside
+# `Call_method` to resolve the method ID) only walks the receiver
+# class's declared methods — it does NOT follow the vtable up to
+# WryActivity. MainActivity must therefore have a DECLARED
+# `getId()`/`setId(int)` of its own. The CI workflow makes this happen
+# in two steps:
 #
-# Fix: a CI step in .github/workflows/release.yml injects
-# `var id: Int = 0` into MainActivity.kt (a Kotlin property shadow,
-# which generates fresh `getId()` + `setId(int)` methods on
-# MainActivity's own method table). Keep those methods here so R8
-# doesn't strip them in release builds (where `isMinifyEnabled = true`).
-# Without this rule R8 sees the methods as unused and removes them,
-# reproducing the NoSuchMethodError.
--keepclassmembers class com.aimonitor.app.MainActivity {
+#   1. BuildTask.kt (after cargo build) patches
+#      WryActivity's `var id: Int = 0` to `open var id: Int = 0` so
+#      it can be overridden.
+#   2. A separate step injects `override var id: Int = 0` into
+#      MainActivity.kt, so MainActivity's own method table contains
+#      `getId()` and `setId(int)`.
+#
+# Then this file keeps those methods with `-keep` (NOT
+# `-keepclassmembers` — that one still lets R8 inline the method body
+# into the call site and remove the declaration; `-keep` forbids
+# both inlining and removal). WRY's own proguard-wry.pro keeps
+# WryActivity.getId() but not MainActivity.getId(), which is why this
+# rule has to live here. We keep both classes for belt-and-braces.
+-keep class com.aimonitor.app.MainActivity {
     int getId();
     void setId(int);
 }
-# Also keep the WryActivity versions as a belt-and-braces measure in
-# case the JNI lookup target is ever retargeted to the superclass.
--keepclassmembers class com.aimonitor.app.WryActivity {
+-keep class com.aimonitor.app.WryActivity {
     int getId();
     void setId(int);
 }
