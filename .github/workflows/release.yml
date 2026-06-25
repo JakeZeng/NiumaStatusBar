@@ -295,50 +295,24 @@ jobs:
           echo "--- app/build.gradle.kts (buildFeatures + signing blocks) ---"
           grep -B1 -A15 'signingConfigs\|signingConfig' "$GRADLE_FILE" || true
 
-          # Patch MainActivity.kt to work around a WRY v0.55.1 bug.
-          # WRY's `Rust.wryCreate` JNI function (wry/src/android/mod.rs:117) calls
-          # `activity.getId()` to derive an internal `activity_id`, but `Activity`
-          # has no `getId()` (it's a `View` method) — the JNI throws
-          # `NoSuchMethodError` during the Rust bridge's `<clinit>`, crashing
-          # the app on launch. Add a plain `fun getId()` to MainActivity
-          # returning a stable per-instance int so WRY can register the
-          # activity. Safe to remove once we move off tauri 2.11.3 (which
-          # pins wry 0.55.1).
+          # WRY v0.55.1 (`wry/src/android/mod.rs:117`, `binding.rs:277`) calls
+          # `activity.getId()` / `setId()` from Rust.wryCreate and
+          # onWebviewDestroy. The `WryActivity.var id: Int = 0` property
+          # generates the accessors, but R8 inlines the property accessor in
+          # release builds and strips the getter, crashing the app on launch
+          # with NoSuchMethodError. Fix: a `-keepclassmembers` rule for
+          # WryActivity's getId()/setId() is committed at
+          # src-tauri/gen/android/app/proguard-rules.pro (AGP picks it up
+          # via `*fileTree(".") { include("**/*.pro") }` in build.gradle.kts).
+          # Earlier CI attempts also injected `fun getId()` into
+          # MainActivity — that collides with WryActivity's auto-generated
+          # getId() and kotlinc rejects it with "Accidental override". Strip
+          # any leftover injection from the template-generated file. Remove
+          # this whole step once we move off tauri 2.11.3 (which pins wry
+          # 0.55.1).
           MAIN_ACTIVITY=src-tauri/gen/android/app/src/main/java/com/aimonitor/app/MainActivity.kt
-          # Don't add a Kotlin `getId()` to MainActivity — it conflicts with the
-          # `getId()` JVM method auto-generated from WryActivity's
-          # `var id: Int = 0` property (kotlinc: "Accidental override: same
-          # JVM signature (getId()I)"). The real fix is to keep the inherited
-          # getId()/setId() via an R8/ProGuard rule (see proguard-rules.pro
-          # created below). WRY v0.55.1 (wry/src/android/mod.rs:117 and
-          # wry/src/android/binding.rs:277) calls activity.getId() from
-          # Rust.wryCreate and onWebviewDestroy; R8 inlines the property
-          # accessor in WryActivity and strips the getter, which makes the
-          # JNI call fail with NoSuchMethodError at runtime. Drop this once
-          # we move off tauri 2.11.3 (which pins wry 0.55.1).
           if [ -f "$MAIN_ACTIVITY" ] && grep -q 'fun getId' "$MAIN_ACTIVITY"; then
             sed -i '/^  fun getId(): Int = hashCode()$/d' "$MAIN_ACTIVITY"
-          fi
-
-          # R8/ProGuard keep rule for WryActivity's getId()/setId() (generated
-          # from the `var id: Int = 0` property). WRY's JNI code looks these up
-          # by name; without this rule R8 inlines the property accessor and
-          # strips the methods, causing a runtime NoSuchMethodError.
-          PROGUARD_FILE=src-tauri/gen/android/app/proguard-rules.pro
-          if [ ! -f "$PROGUARD_FILE" ] || ! grep -q 'WryActivity.*getId' "$PROGUARD_FILE"; then
-            cat > "$PROGUARD_FILE" <<'PROGUARD_EOF'
-# Keep WRY's JNI-bound activity id accessor. WRY v0.55.1 calls
-# activity.getId()/setId() from Rust.wryCreate (mod.rs:117) and
-# onWebviewDestroy (binding.rs:277). R8 inlines the WryActivity
-# `var id: Int` property accessor and strips the getter, so the JNI
-# lookup fails at runtime with NoSuchMethodError.
--keepclassmembers class com.aimonitor.app.WryActivity {
-    int getId();
-    void setId(int);
-}
-PROGUARD_EOF
-            echo "--- app/proguard-rules.pro (after WRY getId() keep) ---"
-            cat "$PROGUARD_FILE"
           fi
 
       - name: Ensure tauri.settings.gradle and tauri.build.gradle.kts exist
