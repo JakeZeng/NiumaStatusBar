@@ -17,8 +17,38 @@
 #-keepattributes SourceFile,LineNumberTable
 
 # If you keep the line number information, uncomment this to
-# hide the original source file name.
+# hide the original source file name:
 #-renamesourcefileattribute SourceFile
+
+# --- NiumaStatusBar minify config (WRY 0.55.1 + MIUI workaround) ---
+#
+# Disable R8's name-obfuscation pass. Two reasons:
+#
+# 1. WRY 0.55.1's JNI code (`Rust.wryCreate`, `onWebviewDestroy`)
+#    calls `activity.getId()` / `activity.setId(int)` by string
+#    name; JNI's `GetMethodID` only walks the receiver class's
+#    declared methods, so the method names MUST survive R8.
+#    R8 8.x (AGP 8.x default) runs in full-mode where the
+#    `proguard-android.txt` and `proguard-android-optimize.txt`
+#    defaults are slightly stricter than the old ProGuard and
+#    even explicit `-keep class X { *; }` plus `@Keep`
+#    annotations are not enough to keep WryActivity / MainActivity
+#    intact through vertical method merging and class repackaging.
+#    `-dontobfuscate` short-circuits the entire obfuscation pass;
+#    names are preserved 1:1, JNI lookups work, and the rules
+#    below are belt-and-braces.
+#
+# 2. Xiaomi MIUI 14+ / HyperOS inspects app dex and shows a
+#    "NiumaStatusBar 使用的加固技术还没有适配当前安卓系统版本"
+#    toast / app-info banner when it sees short obfuscated
+#    class/method names (it mistakes R8 output for 3rd-party
+#    packer output). Disabling obfuscation here also keeps MIUI
+#    quiet.
+#
+# We still let R8 do tree-shaking (removes unreachable code,
+# shrinks APK) — that's controlled by `isMinifyEnabled = true`
+# in build.gradle.kts and is independent of obfuscation.
+-dontobfuscate
 
 # --- WRY v0.55.1 JNI keep rule (NiumaStatusBar workaround) ---
 # WRY 0.55.1's `Rust.wryCreate` (wry/src/android/mod.rs:117) and
