@@ -661,14 +661,21 @@ jobs:
                   }
 
                   // Copy the built .so into the Android project for APK packaging.
-                  val cargoToml = File(cargoRoot, "Cargo.toml")
-                  val soName = if (cargoToml.exists()) {
-                      val tomlText = cargoToml.readText()
-                      val nameMatch = Regex("""name\s*=\s*"([^"]+)"""").find(tomlText)
-                      "lib${nameMatch?.groupValues?.get(1) ?: "app"}.so"
-                  } else {
-                      "libapp.so"
-                  }
+                  // We pick the source .so via a glob in `target/<triple>/<profile>/`
+                  // (cargo produces `lib<[lib].name>.so` for cdylib crates — e.g.
+                  // `libai_model_monitor_lib.so` for `[lib] name = "ai_model_monitor_lib"`).
+                  // Don't try to derive the filename from `[package].name`: that's
+                  // a different name (often hyphenated), and the .so Java side
+                  // loads by the `[lib]` name. Using the wrong name here leaves
+                  // jniLibs/<abi>/ with a file the loader can't find, and the
+                  // app crashes on launch with `dlopen failed: library
+                  // "lib<lib.name>.so" not found`.
+                  val targetDir = File(cargoRoot, "target/$targetTriple/$profile")
+                  val candidates = targetDir.listFiles()?.filter {
+                      it.name.endsWith(".so") && it.name.startsWith("lib")
+                  } ?: emptyList()
+                  val srcFinal = candidates.firstOrNull()
+                      ?: throw GradleException("Built .so not found in $targetDir (candidates: $candidates)")
                   val abi = when (targetTriple) {
                       "aarch64-linux-android" -> "arm64-v8a"
                       "armv7-linux-androideabi" -> "armeabi-v7a"
@@ -676,23 +683,9 @@ jobs:
                       "x86_64-linux-android" -> "x86_64"
                       else -> targetTriple
                   }
-                  val targetDir = File(cargoRoot, "target/$targetTriple/$profile")
-                  val srcSo = File(targetDir, soName)
-                  val fallback = File(targetDir, "libapp.so")
-                  val candidates = targetDir.listFiles()?.filter {
-                      it.name.endsWith(".so") && it.name.startsWith("lib")
-                  } ?: emptyList()
-                  val srcFinal = when {
-                      srcSo.exists() -> srcSo
-                      fallback.exists() -> fallback
-                      candidates.isNotEmpty() -> candidates.first().also {
-                          project.logger.lifecycle("Found .so via glob: $it")
-                      }
-                      else -> throw GradleException("Built .so not found in $targetDir (tried: $soName, libapp.so, candidates: $candidates)")
-                  }
                   val dstDir = File(project.projectDir, "src/main/jniLibs/$abi")
                   if (!dstDir.exists()) dstDir.mkdirs()
-                  val dstSo = File(dstDir, soName)
+                  val dstSo = File(dstDir, srcFinal.name)
                   srcFinal.copyTo(dstSo, overwrite = true)
                   project.logger.lifecycle("Copied $srcFinal -> $dstSo")
               }
