@@ -38,12 +38,17 @@
 #      MainActivity.kt, so MainActivity's own method table contains
 #      `getId()` and `setId(int)`.
 #
-# Then this file keeps those methods with `-keep` (NOT
-# `-keepclassmembers` — that one still lets R8 inline the method body
-# into the call site and remove the declaration; `-keep` forbids
-# both inlining and removal). WRY's own proguard-wry.pro keeps
-# WryActivity.getId() but not MainActivity.getId(), which is why this
-# rule has to live here. We keep both classes for belt-and-braces.
+# Then this file keeps those methods. Two rules are needed because
+# R8 can vertical-merge an override that only forwards to super
+# (which is what `override var id: Int = 0` does in MainActivity —
+# the getter returns super.getId() and the setter calls super.setId()).
+# The `@Keep` annotation on the property is the primary defense
+# (R8 honors @Keep even when merging); the `-keep` rule on the
+# specific method signatures is a belt-and-braces measure so the
+# bytecode survives even if the annotation gets stripped by
+# R8's annotation processing. WRY's own proguard-wry.pro keeps
+# WryActivity.getId() but not MainActivity.getId(), which is why
+# this rule has to live here. We keep both classes for belt-and-braces.
 -keep class com.aimonitor.app.MainActivity {
     int getId();
     void setId(int);
@@ -52,4 +57,9 @@
     int getId();
     void setId(int);
 }
+# Belt-and-braces: keep ALL members of these two classes (including
+# the @Keep-annotated MainActivity.id property's accessors) so R8
+# cannot inline + remove them in the vertical-merge pass.
+-keep class com.aimonitor.app.MainActivity { *; }
+-keep class com.aimonitor.app.WryActivity { *; }
 # Remove this block once we move off tauri 2.11.3 (which pins wry 0.55.1).

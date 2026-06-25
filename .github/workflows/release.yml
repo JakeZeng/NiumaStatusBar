@@ -343,9 +343,24 @@ jobs:
             # 3. Inject `override var id: Int = 0`. The parent property
             #    is patched to `open` by BuildTask.kt at cargo-build time;
             #    by the time kotlinc runs, the parent is open and this
-            #    override compiles.
-            if ! grep -q '^  override var id: Int = 0$' "$MAIN_ACTIVITY"; then
-              sed -i 's|^}$|  override var id: Int = 0\n}|' "$MAIN_ACTIVITY"
+            #    override compiles. The `@Keep` annotation tells R8 in
+            #    `proguard-android-optimize.txt` to preserve the
+            #    generated `getId()` / `setId(int)` methods on this
+            #    class's method table — without it, R8 may vertical-merge
+            #    MainActivity.getId() (which trivially forwards to
+            #    super.getId()) into its callers and then strip the
+            #    declaration, which makes JNI's `GetMethodID` on
+            #    `MainActivity` fail with NoSuchMethodError even though
+            #    `WryActivity.getId()` is correctly kept.
+            if ! grep -q '^  @Keep$' "$MAIN_ACTIVITY" \
+               && ! grep -q '^  override var id: Int = 0$' "$MAIN_ACTIVITY"; then
+              # Add the @Keep import (idempotent).
+              if ! grep -q 'import androidx.annotation.Keep' "$MAIN_ACTIVITY"; then
+                sed -i 's|^import android.os.Bundle$|&\nimport androidx.annotation.Keep|' "$MAIN_ACTIVITY"
+              fi
+              # Inject the @Keep-annotated property just before the
+              # class closing brace (`^}$` at 0 indent).
+              sed -i 's|^}$|  @Keep\n  override var id: Int = 0\n}|' "$MAIN_ACTIVITY"
             fi
             echo "--- MainActivity.kt (after WRY getId() override) ---"
             cat "$MAIN_ACTIVITY"
