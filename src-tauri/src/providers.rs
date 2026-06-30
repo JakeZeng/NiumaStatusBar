@@ -1,0 +1,373 @@
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use tokio::sync::RwLock;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProviderConfig {
+    pub id: String,
+    pub name: String,
+    pub provider: String,
+    pub base_url: String,
+    pub api_key: String,
+    pub query_endpoint: String,
+    pub query_method: String,
+    pub query_headers: HashMap<String, String>,
+    pub query_params: serde_json::Value,
+    pub refresh_interval: u64,
+    pub is_enabled: bool,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct UsageStatus {
+    pub provider_id: String,
+    pub timestamp: i64,
+    pub balance: Option<f64>,
+    pub balance_used: Option<f64>,
+    pub balance_limit: Option<f64>,
+    pub requests_today: Option<i64>,
+    pub error_rate: Option<f64>,
+    pub avg_latency: Option<i64>,
+    pub last_error: Option<String>,
+
+    // === 多周期额度（MiniMax / Coding Plan）===
+    /// 5 小时窗口：剩余
+    pub quota_5h_remaining: Option<f64>,
+    /// 5 小时窗口：总额
+    pub quota_5h_total: Option<f64>,
+    /// 5 小时窗口：已用
+    pub quota_5h_used: Option<f64>,
+
+    /// 周窗口：剩余
+    pub quota_week_remaining: Option<f64>,
+    /// 周窗口：总额
+    pub quota_week_total: Option<f64>,
+    /// 周窗口：已用
+    pub quota_week_used: Option<f64>,
+
+    /// 月窗口：剩余（仅 Coding Plan Pro/Lite）
+    pub quota_month_remaining: Option<f64>,
+    /// 月窗口：总额
+    pub quota_month_total: Option<f64>,
+    /// 月窗口：已用
+    pub quota_month_used: Option<f64>,
+}
+
+pub struct ProviderManager {
+    client: reqwest::Client,
+    providers: RwLock<Vec<ProviderConfig>>,
+    statuses: RwLock<HashMap<String, UsageStatus>>,
+}
+
+impl ProviderManager {
+    pub fn new() -> Self {
+        Self {
+            client: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(15))
+                .build()
+                .unwrap_or_default(),
+            providers: RwLock::new(Vec::new()),
+            statuses: RwLock::new(HashMap::new()),
+        }
+    }
+
+    pub async fn get_providers(&self) -> Vec<ProviderConfig> {
+        self.providers.read().await.clone()
+    }
+
+    pub async fn set_providers(&self, providers: Vec<ProviderConfig>) {
+        *self.providers.write().await = providers;
+    }
+
+    pub async fn add_provider(&self, provider: ProviderConfig) {
+        self.providers.write().await.push(provider);
+    }
+
+    pub async fn update_provider(&self, id: String, provider: ProviderConfig) {
+        let mut providers = self.providers.write().await;
+        if let Some(p) = providers.iter_mut().find(|p| p.id == id) {
+            *p = provider;
+        }
+    }
+
+    pub async fn delete_provider(&self, id: String) {
+        self.providers.write().await.retain(|p| p.id != id);
+        self.statuses.write().await.remove(&id);
+    }
+
+    pub async fn update_status(&self, provider_id: String, status: UsageStatus) {
+        self.statuses.write().await.insert(provider_id, status);
+    }
+
+    pub async fn get_status(&self, provider_id: &str) -> Option<UsageStatus> {
+        self.statuses.read().await.get(provider_id).cloned()
+    }
+
+    pub async fn fetch_usage(&self, provider: &ProviderConfig) -> Result<UsageStatus, String> {
+        let url = format!(
+            "{}{}",
+            provider.base_url.trim_end_matches('/'),
+            provider.query_endpoint
+        );
+
+        let start = std::time::Instant::now();
+
+        let mut request = match provider.query_method.as_str() {
+            "GET" => self.client.get(&url),
+            "POST" => self.client.post(&url),
+            _ => return Err("Unsupported method".to_string()),
+        };
+
+        request = request
+            .header("Authorization", format!("Bearer {}", provider.api_key))
+            .header("Content-Type", "application/json");
+
+        for (key, value) in &provider.query_headers {
+            request = request.header(key.as_str(), value.as_str());
+        }
+
+        // 把 query_params 中的 model 项从 URL 查询串里剥离出来（避免 `?model=...` 出现在 URL 上）
+        // 同时收集剩余的 query 项
+        let mut extra_query: Vec<(String, String)> = Vec::new();
+        if let Some(params) = provider.query_params.as_object() {
+            for (key, value) in params {
+                if key == "model" { continue; }
+                if let Some(s) = value.as_str() {
+                    extra_query.push((key.clone(), s.to_string()));
+                }
+            }
+        }
+        for (k, v) in &extra_query {
+            request = request.query(&[(k.as_str(), v.as_str())]);
+        }
+
+        // 火山方舟 / OpenAI 兼容 chat-completions 端点：注入最小 chat 请求体
+        // 触发服务端的 X-RateLimit-* 响应头（5h / week / month）
+        // 既匹配 provider 类型，也匹配 URL 路径（修复用户自定义时类型不匹配的问题）
+        let url_lower = url.to_lowercase();
+        let is_volc_coding = provider.provider == "volcengine_coding"
+            || provider.provider == "volcengine_token";
+        let is_chat_completions = url_lower.contains("/chat/completions");
+        let is_ark_coding_endpoint = url_lower.contains("/api/coding/v3");
+        let is_ark_cn_host = url_lower.contains("ark.cn-beijing.volces.com")
+            || url_lower.contains("ark.volces.com");
+        let is_ark_endpoint = is_ark_cn_host
+            || url_lower.contains("volces.com/api/")
+            || is_ark_coding_endpoint;
+        let is_post = provider.query_method == "POST";
+
+        // 需要注入 body 的条件：方法为 POST + 命中任一 Ark/chat-completions 端点
+        // 修复：之前仅在 provider.type 匹配时注入，对"自定义"但 URL 指向 Ark 的情况漏判
+        let needs_body = is_post
+            && (is_volc_coding || is_chat_completions || is_ark_endpoint);
+
+        if needs_body {
+            // 优先使用 provider.query_params 里的 model，否则用默认 model
+            let model = provider
+                .query_params
+                .get("model")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .or_else(|| {
+                    provider
+                        .query_headers
+                        .get("x-ark-model")
+                        .cloned()
+                })
+                .unwrap_or_else(|| "doubao-seed-code-1-0-260215".to_string());
+
+            let minimal_body = serde_json::json!({
+                "model": model,
+                "messages": [{"role": "user", "content": "ping"}],
+                "max_tokens": 1,
+                "stream": false
+            });
+            request = request.json(&minimal_body);
+            eprintln!(
+                "[providers] 注入 body: provider={}, url={}, model={}",
+                provider.provider, url, model
+            );
+        } else if is_post && (is_chat_completions || is_ark_endpoint) {
+            // 防御性日志：命中 Ark URL 但没注入 body（理论上前一个分支已覆盖）
+            eprintln!(
+                "[providers] 警告：POST 命中 Ark/chat-completions 但未注入 body。provider={}, url={}",
+                provider.provider, url
+            );
+        }
+
+        let response = request.send().await.map_err(|e| e.to_string())?;
+        let latency = start.elapsed().as_millis() as i64;
+
+        // 提取所有响应头（用于 Coding Plan 等基于响应头的额度）
+        let mut headers_map = HashMap::new();
+        for (k, v) in response.headers() {
+            if let Ok(v_str) = v.to_str() {
+                headers_map.insert(k.as_str().to_lowercase(), v_str.to_string());
+            }
+        }
+
+        let status_code = response.status().as_u16();
+        let body = response.text().await.map_err(|e| e.to_string())?;
+
+        let mut status = UsageStatus {
+            provider_id: provider.id.clone(),
+            timestamp: chrono::Utc::now().timestamp(),
+            avg_latency: Some(latency),
+            ..Default::default()
+        };
+
+        // ===== 解析逻辑 =====
+
+        // 1) Coding Plan（火山方舟）通过响应头返回
+        parse_coding_plan_headers(&headers_map, &mut status);
+
+        // 2) 通用 JSON 解析
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&body) {
+            parse_generic_json(&json, &mut status);
+
+            // 3) MiniMax Coding Plan / Token Plan
+            if provider.provider == "minimax_coding" || provider.provider == "minimax_token" {
+                parse_minimax_remains(&json, &mut status);
+            }
+        }
+
+        // 4) 错误处理
+        if status_code >= 400 {
+            status.last_error = Some(format!("HTTP {}: {}", status_code, truncate(&body, 200)));
+        }
+
+        Ok(status)
+    }
+}
+
+/// 火山方舟 Coding Plan：从响应头读取
+/// 字段: X-RateLimit-Remaining-5H, X-RateLimit-Limit-5H
+///       X-RateLimit-Remaining-Week, X-RateLimit-Limit-Week
+///       X-RateLimit-Remaining-Month, X-RateLimit-Limit-Month
+fn parse_coding_plan_headers(headers: &HashMap<String, String>, status: &mut UsageStatus) {
+    let get = |k: &str| headers.get(k).and_then(|v| v.parse::<f64>().ok());
+
+    if let Some(remaining) = get("x-ratelimit-remaining-5h") {
+        status.quota_5h_remaining = Some(remaining);
+        if let Some(total) = get("x-ratelimit-limit-5h") {
+            status.quota_5h_total = Some(total);
+            status.quota_5h_used = Some((total - remaining).max(0.0));
+        }
+    }
+
+    if let Some(remaining) = get("x-ratelimit-remaining-week") {
+        status.quota_week_remaining = Some(remaining);
+        if let Some(total) = get("x-ratelimit-limit-week") {
+            status.quota_week_total = Some(total);
+            status.quota_week_used = Some((total - remaining).max(0.0));
+        }
+    }
+
+    if let Some(remaining) = get("x-ratelimit-remaining-month") {
+        status.quota_month_remaining = Some(remaining);
+        if let Some(total) = get("x-ratelimit-limit-month") {
+            status.quota_month_total = Some(total);
+            status.quota_month_used = Some((total - remaining).max(0.0));
+        }
+    }
+}
+
+/// 通用 JSON 解析（兼容 OpenAI/Claude 等）
+fn parse_generic_json(json: &serde_json::Value, status: &mut UsageStatus) {
+    if status.balance.is_none() {
+        status.balance = json
+            .get("balance")
+            .or(json.get("total_available"))
+            .or(json.get("credit"))
+            .and_then(|v| v.as_f64());
+    }
+    if status.balance_used.is_none() {
+        status.balance_used = json
+            .get("used")
+            .or(json.get("balance_used"))
+            .or(json.get("total_used"))
+            .and_then(|v| v.as_f64());
+    }
+    if status.balance_limit.is_none() {
+        status.balance_limit = json
+            .get("limit")
+            .or(json.get("balance_limit"))
+            .or(json.get("hard_limit_usd"))
+            .and_then(|v| v.as_f64());
+    }
+    if status.requests_today.is_none() {
+        status.requests_today = json
+            .get("requests_today")
+            .or(json.get("total_requests"))
+            .and_then(|v| v.as_i64());
+    }
+}
+
+/// MiniMax Coding Plan / Token Plan 专用解析
+/// 响应示例:
+/// {
+///   "base_resp": { "status_code": 0, "status_msg": "success" },
+///   "model_remains": [
+///     { "model_name": "MiniMax-M2.7",
+///       "current_interval_total_count": 1200,
+///       "current_interval_usage_count": 800,
+///       "weekly_total_count": 9000,
+///       "weekly_usage_count": 5000
+///     }
+///   ]
+/// }
+fn parse_minimax_remains(json: &serde_json::Value, status: &mut UsageStatus) {
+    // 兼容 MiniMax 国内 / 海外两种格式
+    let model_remains = json
+        .get("model_remains")
+        .or(json.get("data"))
+        .and_then(|v| v.as_array());
+
+    if let Some(arr) = model_remains {
+        if let Some(first) = arr.first() {
+            // 5 小时窗口
+            if status.quota_5h_total.is_none() {
+                status.quota_5h_total = first
+                    .get("current_interval_total_count")
+                    .or(first.get("interval_total_count"))
+                    .and_then(|v| v.as_f64());
+            }
+            if status.quota_5h_used.is_none() {
+                status.quota_5h_used = first
+                    .get("current_interval_usage_count")
+                    .or(first.get("interval_usage_count"))
+                    .and_then(|v| v.as_f64());
+            }
+            if let (Some(total), Some(used)) = (status.quota_5h_total, status.quota_5h_used) {
+                status.quota_5h_remaining = Some((total - used).max(0.0));
+            }
+
+            // 周窗口
+            if status.quota_week_total.is_none() {
+                status.quota_week_total = first
+                    .get("weekly_total_count")
+                    .or(first.get("week_total_count"))
+                    .and_then(|v| v.as_f64());
+            }
+            if status.quota_week_used.is_none() {
+                status.quota_week_used = first
+                    .get("weekly_usage_count")
+                    .or(first.get("week_usage_count"))
+                    .and_then(|v| v.as_f64());
+            }
+            if let (Some(total), Some(used)) = (status.quota_week_total, status.quota_week_used) {
+                status.quota_week_remaining = Some((total - used).max(0.0));
+            }
+        }
+    }
+}
+
+fn truncate(s: &str, max: usize) -> String {
+    if s.chars().count() > max {
+        let mut t: String = s.chars().take(max).collect();
+        t.push_str("...");
+        t
+    } else {
+        s.to_string()
+    }
+}

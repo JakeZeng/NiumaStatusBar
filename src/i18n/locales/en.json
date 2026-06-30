@@ -1,0 +1,53 @@
+{
+  "app": {
+    "title": "AI Model Monitor",
+    "addProvider": "Add Provider",
+    "noProviders": "No providers added yet",
+    "noProvidersHint": "Click \"Add Provider\" in the top right to start"
+  },
+  "theme": {
+    "cyberpunk": "Cyberpunk",
+    "wuxia": "Wuxia",
+    "guoman": "Guoman"
+  },
+  "provider": {
+    "balance": "Balance",
+    "used": "Used",
+    "latency": "Latency",
+    "requestsToday": "Requests Today",
+    "edit": "Edit Provider",
+    "add": "Add Provider",
+    "name": "Display Name",
+    "apiKey": "API Key",
+    "baseUrl": "Base URL",
+    "queryEndpoint": "Query Endpoint",
+    "method": "Method",
+    "refreshInterval": "Refresh Interval (sec)",
+    "presets": "Quick Presets",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete"
+  },
+  "chart": {
+    "balanceTrend": "Balance Trend",
+    "noData": "No history data yet, waiting for polling...",
+    "range1h": "1H",
+    "range6h": "6H",
+    "range24h": "24H",
+    "range7d": "7D"
+  },
+  "config": {
+    "export": "Export",
+    "import": "Import",
+    "exportSuccess": "Config exported",
+    "importSuccess": "Imported {{count}} providers",
+    "importError": "Import failed: invalid file format",
+    "exportError": "Export failed"
+  },
+  "status": {
+    "active": "Active",
+    "error": "Error",
+    "checking": "Checking",
+    "disabled": "Disabled"
+  }
+}
