@@ -66,8 +66,13 @@ pub fn run() {
             app.manage(db.clone());
             app.manage(manager.clone());
 
-            // 初始化轮询器
-            let poller = poller::Poller::new(manager.clone(), app.handle().clone(), db.clone());
+            // 初始化轮询器（并注册为 State，供 commands 即时启停单个 Provider）
+            let poller = Arc::new(poller::Poller::new(
+                manager.clone(),
+                app.handle().clone(),
+                db.clone(),
+            ));
+            app.manage(poller.clone());
             tauri::async_runtime::spawn(async move {
                 poller.start_all().await;
             });

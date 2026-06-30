@@ -1,8 +1,11 @@
 use crate::providers::{ProviderConfig, ProviderManager, UsageStatus};
 use crate::storage::Database;
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
+use tokio::sync::Notify;
 use tokio::time;
 
 /// 轮询调度器：为每个启用的 Provider 启动独立的异步轮询任务
@@ -10,18 +13,25 @@ pub struct Poller {
     manager: Arc<ProviderManager>,
     app_handle: AppHandle,
     db: Arc<Database>,
+    /// provider_id -> 停止信号。spawn_poll 时插入，stop_poll 时 notify_waiters 终止 task。
+    handles: Mutex<HashMap<String, Arc<Notify>>>,
 }
 
 impl Poller {
     pub fn new(manager: Arc<ProviderManager>, app_handle: AppHandle, db: Arc<Database>) -> Self {
-        Self { manager, app_handle, db }
+        Self {
+            manager,
+            app_handle,
+            db,
+            handles: Mutex::new(HashMap::new()),
+        }
     }
 
     /// 启动所有 Provider 的轮询
     pub async fn start_all(&self) {
         // 清理旧历史数据
         let _ = self.db.cleanup_old_history();
-        
+
         let providers = self.manager.get_providers().await;
         for provider in providers {
             if provider.is_enabled {
@@ -30,18 +40,41 @@ impl Poller {
         }
     }
 
-    /// 为单个 Provider 启动轮询
+    /// 停止单个 Provider 的轮询任务（若存在）
+    pub fn stop_poll(&self, provider_id: &str) {
+        if let Some(notify) = self.handles.lock().unwrap().remove(provider_id) {
+            notify.notify_waiters();
+        }
+    }
+
+    /// 为单个 Provider 启动轮询。如已有同 id 的任务在跑，先停掉再启。
     pub fn spawn_poll(&self, provider: ProviderConfig) {
+        self.stop_poll(&provider.id);
+
         let manager = self.manager.clone();
         let app_handle = self.app_handle.clone();
         let db = self.db.clone();
-        let interval_secs = provider.refresh_interval.max(10); // 最小 10 秒
+        let interval_secs = provider.refresh_interval.max(10);
+        let stop = Arc::new(Notify::new());
+        self.handles
+            .lock()
+            .unwrap()
+            .insert(provider.id.clone(), stop.clone());
 
         tokio::spawn(async move {
+            // 立即先跑一次，避免用户启用后要等一整个间隔才能看到数据
+            Self::tick_once(&manager, &app_handle, &db, &provider).await;
+
             let mut ticker = time::interval(Duration::from_secs(interval_secs));
+            ticker.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
+            // 第一次 tick 立即返回，丢弃以与上面的 tick_once 对齐节奏
+            ticker.tick().await;
 
             loop {
-                ticker.tick().await;
+                tokio::select! {
+                    _ = stop.notified() => break,
+                    _ = ticker.tick() => {}
+                }
 
                 // 检查 Provider 是否仍然启用
                 let current = manager.get_providers().await;
@@ -52,30 +85,34 @@ impl Poller {
                     break;
                 }
 
-                let result = Self::fetch_with_retry(&manager, &provider, 3).await;
-
-                match result {
-                    Ok(status) => {
-                        // 保存到历史记录
-                        let _ = db.save_usage_history(&status);
-                        // 更新内存中的状态
-                        manager.update_status(provider.id.clone(), status.clone()).await;
-                        // 通知前端
-                        let _ = app_handle.emit("status-update", &status);
-                    }
-                    Err(err) => {
-                        let error_status = UsageStatus {
-                            provider_id: provider.id.clone(),
-                            timestamp: chrono::Utc::now().timestamp(),
-                            last_error: Some(err),
-                            ..Default::default()
-                        };
-                        manager.update_status(provider.id.clone(), error_status.clone()).await;
-                        let _ = app_handle.emit("status-update", &error_status);
-                    }
-                }
+                Self::tick_once(&manager, &app_handle, &db, &provider).await;
             }
         });
+    }
+
+    async fn tick_once(
+        manager: &Arc<ProviderManager>,
+        app_handle: &AppHandle,
+        db: &Arc<Database>,
+        provider: &ProviderConfig,
+    ) {
+        match Self::fetch_with_retry(manager, provider, 3).await {
+            Ok(status) => {
+                let _ = db.save_usage_history(&status);
+                manager.update_status(provider.id.clone(), status.clone()).await;
+                let _ = app_handle.emit("status-update", &status);
+            }
+            Err(err) => {
+                let error_status = UsageStatus {
+                    provider_id: provider.id.clone(),
+                    timestamp: chrono::Utc::now().timestamp(),
+                    last_error: Some(err),
+                    ..Default::default()
+                };
+                manager.update_status(provider.id.clone(), error_status.clone()).await;
+                let _ = app_handle.emit("status-update", &error_status);
+            }
+        }
     }
 
     /// 带指数退避重试的请求

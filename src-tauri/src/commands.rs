@@ -1,4 +1,5 @@
 use crate::catalog::{get_catalog, get_preset_by_id, ProviderPreset};
+use crate::poller::Poller;
 use crate::providers::{ProviderConfig, ProviderManager, UsageStatus};
 use crate::storage::Database;
 use std::sync::Arc;
@@ -17,9 +18,13 @@ pub async fn add_provider(
     provider: ProviderConfig,
     manager: State<'_, Arc<ProviderManager>>,
     db: State<'_, Arc<Database>>,
+    poller: State<'_, Arc<Poller>>,
 ) -> Result<(), String> {
     db.save_provider(&provider).map_err(|e| e.to_string())?;
-    manager.add_provider(provider).await;
+    manager.add_provider(provider.clone()).await;
+    if provider.is_enabled {
+        poller.spawn_poll(provider);
+    }
     Ok(())
 }
 
@@ -29,9 +34,16 @@ pub async fn update_provider(
     provider: ProviderConfig,
     manager: State<'_, Arc<ProviderManager>>,
     db: State<'_, Arc<Database>>,
+    poller: State<'_, Arc<Poller>>,
 ) -> Result<(), String> {
     db.save_provider(&provider).map_err(|e| e.to_string())?;
-    manager.update_provider(id, provider).await;
+    manager.update_provider(id.clone(), provider.clone()).await;
+    // 配置变更后重启轮询任务以让新的 url / interval / key 立即生效
+    if provider.is_enabled {
+        poller.spawn_poll(provider);
+    } else {
+        poller.stop_poll(&id);
+    }
     Ok(())
 }
 
@@ -40,9 +52,11 @@ pub async fn delete_provider(
     id: String,
     manager: State<'_, Arc<ProviderManager>>,
     db: State<'_, Arc<Database>>,
+    poller: State<'_, Arc<Poller>>,
 ) -> Result<(), String> {
     db.delete_provider(&id).map_err(|e| e.to_string())?;
-    manager.delete_provider(id).await;
+    manager.delete_provider(id.clone()).await;
+    poller.stop_poll(&id);
     Ok(())
 }
 
@@ -128,6 +142,7 @@ pub async fn enable_preset(
     refresh_interval: Option<u64>,
     manager: State<'_, Arc<ProviderManager>>,
     db: State<'_, Arc<Database>>,
+    poller: State<'_, Arc<Poller>>,
 ) -> Result<ProviderConfig, String> {
     let preset = get_preset_by_id(&preset_id)
         .ok_or_else(|| format!("Preset '{}' not found", preset_id))?;
@@ -148,13 +163,14 @@ pub async fn enable_preset(
             .as_ref()
             .map(|m| serde_json::json!({ "model": m }))
             .unwrap_or(serde_json::Value::Null),
-        refresh_interval: preset.default_refresh_interval,
+        refresh_interval: refresh_interval.unwrap_or(preset.default_refresh_interval),
         is_enabled: true,
         status: "active".to_string(),
     };
 
     db.save_provider(&provider).map_err(|e| e.to_string())?;
     manager.add_provider(provider.clone()).await;
+    poller.spawn_poll(provider.clone());
     Ok(provider)
 }
 
@@ -165,6 +181,7 @@ pub async fn toggle_provider(
     enabled: bool,
     manager: State<'_, Arc<ProviderManager>>,
     db: State<'_, Arc<Database>>,
+    poller: State<'_, Arc<Poller>>,
 ) -> Result<(), String> {
     let mut providers = manager.get_providers().await;
     let provider = providers
@@ -175,6 +192,12 @@ pub async fn toggle_provider(
     provider.is_enabled = enabled;
     let updated = provider.clone();
     db.save_provider(&updated).map_err(|e| e.to_string())?;
+    manager.update_provider(id.clone(), updated.clone()).await;
+    if enabled {
+        poller.spawn_poll(updated);
+    } else {
+        poller.stop_poll(&id);
+    }
     Ok(())
 }
 

@@ -118,12 +118,34 @@ impl ProviderManager {
             _ => return Err("Unsupported method".to_string()),
         };
 
-        request = request
-            .header("Authorization", format!("Bearer {}", provider.api_key))
-            .header("Content-Type", "application/json");
+        request = request.header("Authorization", format!("Bearer {}", provider.api_key));
 
+        // 是否会注入 JSON body（决定要不要在这里手动塞 Content-Type）
+        let url_lower = url.to_lowercase();
+        let is_volc_coding = provider.provider == "volcengine_coding"
+            || provider.provider == "volcengine_token";
+        let is_chat_completions = url_lower.contains("/chat/completions");
+        let is_ark_coding_endpoint = url_lower.contains("/api/coding/v3");
+        let is_ark_cn_host = url_lower.contains("ark.cn-beijing.volces.com")
+            || url_lower.contains("ark.volces.com");
+        let is_ark_endpoint = is_ark_cn_host
+            || url_lower.contains("volces.com/api/")
+            || is_ark_coding_endpoint;
+        let is_post = provider.query_method == "POST";
+        let needs_body = is_post
+            && (is_volc_coding || is_chat_completions || is_ark_endpoint);
+
+        // 注入用户自定义 headers——若马上要 .json() 则跳过 Content-Type，避免
+        // reqwest 内部追加导致重复头（火山方舟网关会因此返回 400 "缺少 message"）。
         for (key, value) in &provider.query_headers {
+            if needs_body && key.eq_ignore_ascii_case("content-type") {
+                continue;
+            }
             request = request.header(key.as_str(), value.as_str());
+        }
+        // GET 请求显式补一个 Content-Type，POST 走 .json() 自动设置。
+        if !needs_body {
+            request = request.header("Content-Type", "application/json");
         }
 
         // 把 query_params 中的 model 项从 URL 查询串里剥离出来（避免 `?model=...` 出现在 URL 上）
@@ -140,26 +162,6 @@ impl ProviderManager {
         for (k, v) in &extra_query {
             request = request.query(&[(k.as_str(), v.as_str())]);
         }
-
-        // 火山方舟 / OpenAI 兼容 chat-completions 端点：注入最小 chat 请求体
-        // 触发服务端的 X-RateLimit-* 响应头（5h / week / month）
-        // 既匹配 provider 类型，也匹配 URL 路径（修复用户自定义时类型不匹配的问题）
-        let url_lower = url.to_lowercase();
-        let is_volc_coding = provider.provider == "volcengine_coding"
-            || provider.provider == "volcengine_token";
-        let is_chat_completions = url_lower.contains("/chat/completions");
-        let is_ark_coding_endpoint = url_lower.contains("/api/coding/v3");
-        let is_ark_cn_host = url_lower.contains("ark.cn-beijing.volces.com")
-            || url_lower.contains("ark.volces.com");
-        let is_ark_endpoint = is_ark_cn_host
-            || url_lower.contains("volces.com/api/")
-            || is_ark_coding_endpoint;
-        let is_post = provider.query_method == "POST";
-
-        // 需要注入 body 的条件：方法为 POST + 命中任一 Ark/chat-completions 端点
-        // 修复：之前仅在 provider.type 匹配时注入，对"自定义"但 URL 指向 Ark 的情况漏判
-        let needs_body = is_post
-            && (is_volc_coding || is_chat_completions || is_ark_endpoint);
 
         if needs_body {
             // 优先使用 provider.query_params 里的 model，否则用默认 model
@@ -182,13 +184,12 @@ impl ProviderManager {
                 "max_tokens": 1,
                 "stream": false
             });
-            request = request.json(&minimal_body);
             eprintln!(
-                "[providers] 注入 body: provider={}, url={}, model={}",
-                provider.provider, url, model
+                "[providers] 注入 body: provider={}, url={}, model={}, body={}",
+                provider.provider, url, model, minimal_body
             );
+            request = request.json(&minimal_body);
         } else if is_post && (is_chat_completions || is_ark_endpoint) {
-            // 防御性日志：命中 Ark URL 但没注入 body（理论上前一个分支已覆盖）
             eprintln!(
                 "[providers] 警告：POST 命中 Ark/chat-completions 但未注入 body。provider={}, url={}",
                 provider.provider, url
@@ -222,18 +223,70 @@ impl ProviderManager {
         parse_coding_plan_headers(&headers_map, &mut status);
 
         // 2) 通用 JSON 解析
-        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&body) {
-            parse_generic_json(&json, &mut status);
+        let parsed_json: Option<serde_json::Value> = serde_json::from_str(&body).ok();
+        if let Some(ref json) = parsed_json {
+            parse_generic_json(json, &mut status);
 
             // 3) MiniMax Coding Plan / Token Plan
             if provider.provider == "minimax_coding" || provider.provider == "minimax_token" {
-                parse_minimax_remains(&json, &mut status);
+                parse_minimax_remains(json, &mut status);
             }
         }
 
-        // 4) 错误处理
+        // 4) 错误处理：HTTP 错误码 → 显式错误，让前端能看到原因而不是静默"等待数据"
         if status_code >= 400 {
-            status.last_error = Some(format!("HTTP {}: {}", status_code, truncate(&body, 200)));
+            return Err(format!(
+                "HTTP {} 来自 {}：{}",
+                status_code,
+                url,
+                truncate(&body, 300)
+            ));
+        }
+
+        // 5) MiniMax 业务错误码（HTTP 200 但 base_resp.status_code != 0）
+        if (provider.provider == "minimax_coding" || provider.provider == "minimax_token")
+            && status.quota_5h_remaining.is_none()
+            && status.quota_week_remaining.is_none()
+        {
+            if let Some(ref json) = parsed_json {
+                if let Some(base_resp) = json.get("base_resp") {
+                    let code = base_resp.get("status_code").and_then(|v| v.as_i64());
+                    let msg = base_resp
+                        .get("status_msg")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    if code.unwrap_or(0) != 0 || !msg.is_empty() && msg != "success" {
+                        return Err(format!(
+                            "MiniMax 业务错误 code={:?} msg={} body={}",
+                            code,
+                            msg,
+                            truncate(&body, 200)
+                        ));
+                    }
+                }
+                return Err(format!(
+                    "MiniMax 响应未包含 model_remains。原始响应：{}",
+                    truncate(&body, 300)
+                ));
+            } else {
+                return Err(format!(
+                    "MiniMax 响应不是 JSON。原始响应：{}",
+                    truncate(&body, 300)
+                ));
+            }
+        }
+
+        // 6) 火山方舟 Coding Plan：POST 成功但没拿到额度头时，显式说明
+        if (provider.provider == "volcengine_coding" || provider.provider == "volcengine_token")
+            && status.quota_5h_remaining.is_none()
+            && status.quota_week_remaining.is_none()
+            && status.quota_month_remaining.is_none()
+        {
+            return Err(format!(
+                "火山方舟未返回 X-RateLimit-* 响应头。请确认 API Key 已开通 Coding Plan / Token Plan 套餐。响应头：{:?}，body：{}",
+                headers_map.keys().collect::<Vec<_>>(),
+                truncate(&body, 200)
+            ));
         }
 
         Ok(status)

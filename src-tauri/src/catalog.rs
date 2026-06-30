@@ -26,7 +26,7 @@ pub fn get_catalog() -> Vec<ProviderPreset> {
             id: "minimax_coding_cn".into(),
             name: "MiniMax Token Plan (国内)".into(),
             provider_type: "minimax_coding".into(),
-            base_url: "https://www.minimaxi.com".into(),
+            base_url: "https://api.minimaxi.com".into(),
             query_endpoint: "/v1/token_plan/remains".into(),
             query_method: "GET".into(),
             default_headers: [("Content-Type".to_string(), "application/json".to_string())].into(),
