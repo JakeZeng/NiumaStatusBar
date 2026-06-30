@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "AI 模型监控",
+        "title": "粮草用量",
         "width": 1200,
         "height": 800,
         "minWidth": 800,

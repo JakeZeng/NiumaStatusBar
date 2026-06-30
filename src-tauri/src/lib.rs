@@ -7,12 +7,21 @@ mod commands;
 mod poller;
 mod providers;
 mod storage;
+#[cfg(desktop)]
+mod tray;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     use providers::ProviderManager;
     use std::sync::Arc;
+    #[cfg(desktop)]
+    use tauri::Emitter;
     use tauri::Manager;
+
+    // 关闭行为偏好的内存缓存，供 on_window_event 同步读取
+    #[cfg(desktop)]
+    let close_action_cache: Arc<std::sync::RwLock<Option<String>>> =
+        Arc::new(std::sync::RwLock::new(None));
 
     // 桌面端会通过 cfg(desktop) 块继续链式追加全局快捷键插件，所以这里需要 mut
     #[cfg(desktop)]
@@ -44,8 +53,32 @@ pub fn run() {
         );
     }
 
+    #[cfg(desktop)]
+    {
+        let cache = close_action_cache.clone();
+        builder = builder.on_window_event(move |window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let action = cache.read().ok().and_then(|g| g.clone());
+                match action.as_deref() {
+                    Some("exit") => {
+                        // 不阻拦，让窗口关闭后 Tauri 自动退出
+                    }
+                    Some("minimize_to_tray") => {
+                        api.prevent_close();
+                        let _ = window.hide();
+                    }
+                    _ => {
+                        api.prevent_close();
+                        let _ = window.emit("close-requested", ());
+                    }
+                }
+            }
+        });
+    }
+
+    let builder = builder;
     builder
-        .setup(|app| {
+        .setup(move |app| {
             // 初始化数据库 - 使用 Tauri 的 path API 获取跨平台数据目录
             let app_data_dir = app.path().app_data_dir()
                 .expect("Failed to get app data directory");
@@ -60,6 +93,17 @@ pub fn run() {
                 tauri::async_runtime::block_on(async {
                     manager.set_providers(providers).await;
                 });
+            }
+
+            // 载入关闭行为偏好到内存缓存
+            #[cfg(desktop)]
+            {
+                let saved = db.get_setting(commands::CLOSE_ACTION_KEY).ok().flatten();
+                if let Ok(mut guard) = close_action_cache.write() {
+                    *guard = saved;
+                }
+                // 暴露给命令层，set/reset 时同步刷新
+                app.manage(close_action_cache.clone());
             }
 
             // 注册状态
@@ -77,7 +121,7 @@ pub fn run() {
                 poller.start_all().await;
             });
 
-            // ===== 桌面端专属功能：快捷键 =====
+            // ===== 桌面端专属功能：快捷键 + 系统托盘 =====
             #[cfg(desktop)]
             {
                 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
@@ -91,6 +135,10 @@ pub fn run() {
                     .global_shortcut()
                     .register(shortcut)
                     .map_err(|e| format!("Failed to register shortcut: {}", e))?;
+
+                // 注册系统托盘 + 用量轮播 tooltip
+                tray::setup_tray(app.handle(), manager.clone())
+                    .map_err(|e| format!("Failed to setup tray: {}", e))?;
             }
 
             Ok(())
@@ -109,6 +157,11 @@ pub fn run() {
             commands::enable_preset,
             commands::toggle_provider,
             commands::get_active_preset_ids,
+            commands::get_close_action,
+            commands::set_close_action,
+            commands::reset_close_action,
+            commands::window_hide_to_tray,
+            commands::app_quit,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

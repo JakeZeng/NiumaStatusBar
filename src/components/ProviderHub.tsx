@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Search, Check, Plus, ExternalLink, Power, PowerOff, X, Key, Sparkles } from 'lucide-react';
 import { api, type ProviderPreset, type ProviderConfig } from '../api';
+import { ModalBackdrop } from './ModalBackdrop';
 
 interface Props {
   myProviders: ProviderConfig[];
@@ -104,8 +105,8 @@ export function ProviderHub({ myProviders, onProvidersUpdated, onClose }: Props)
   const getCategoryInfo = (cat: string) => CATEGORY_INFO[cat] || CATEGORY_INFO.custom;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className="relative w-full max-w-5xl max-h-[90vh] overflow-hidden 
+    <ModalBackdrop level="base">
+      <div className="relative w-full max-w-5xl max-h-[90vh] overflow-hidden
                       bg-[var(--bg-card)] border border-[var(--border-color)]
                       rounded-2xl shadow-2xl flex flex-col">
         
@@ -280,7 +281,7 @@ export function ProviderHub({ myProviders, onProvidersUpdated, onClose }: Props)
 
       {/* 添加/更新 Key 弹框 */}
       {selectedPreset && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <ModalBackdrop level="nested">
           <div className="w-full max-w-md bg-[var(--bg-card)] border border-[var(--border-color)]
                         rounded-2xl shadow-2xl p-6 space-y-4">
             <div className="flex items-center justify-between">
@@ -385,8 +386,8 @@ export function ProviderHub({ myProviders, onProvidersUpdated, onClose }: Props)
               </button>
             </div>
           </div>
-        </div>
+        </ModalBackdrop>
       )}
-    </div>
+    </ModalBackdrop>
   );
 }

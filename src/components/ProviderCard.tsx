@@ -119,21 +119,21 @@ export function ProviderCard({ provider, onEdit }: Props) {
     : 0;
 
   return (
-    <div className="relative overflow-hidden rounded-xl p-5 
+    <div className="relative overflow-hidden rounded-xl p-3 sm:p-4 lg:p-5
                     bg-[var(--bg-card)] border border-[var(--border-color)]
                     shadow-[var(--shadow-card)]
                     hover:shadow-[var(--glow-primary)] transition-all duration-300
                     backdrop-blur-md">
 
-      <div className="absolute top-0 right-0 w-16 h-16 
+      <div className="absolute top-0 right-0 w-12 h-12 sm:w-16 sm:h-16
                       bg-gradient-to-bl from-[var(--color-primary)]/20 to-transparent
                       rounded-bl-full" />
-      
-      <div className="flex items-center justify-between mb-4">
+
+      <div className="flex items-center justify-between mb-3 sm:mb-4">
         <div className="flex items-center gap-3">
           {getStatusIcon()}
           <div>
-            <h3 className="font-bold text-lg text-[var(--text-primary)]">{provider.name}</h3>
+            <h3 className="font-bold text-base sm:text-lg text-[var(--text-primary)]">{provider.name}</h3>
             <p className="text-xs text-[var(--text-secondary)] uppercase tracking-wider">
               {provider.provider}
             </p>

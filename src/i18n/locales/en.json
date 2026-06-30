@@ -1,6 +1,6 @@
 {
   "app": {
-    "title": "AI Model Monitor",
+    "title": "粮草用量",
     "addProvider": "Add Provider",
     "noProviders": "No providers added yet",
     "noProvidersHint": "Click \"Add Provider\" in the top right to start"

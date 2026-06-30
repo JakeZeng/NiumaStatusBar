@@ -1,5 +1,10 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { readFileSync } from "node:fs";
+
+const pkgVersion = JSON.parse(
+  readFileSync(new URL("./package.json", import.meta.url), "utf-8"),
+).version as string;
 
 export default defineConfig({
   plugins: [react()],
@@ -9,6 +14,9 @@ export default defineConfig({
     strictPort: true,
   },
   envPrefix: ["VITE_", "TAURI_"],
+  define: {
+    __APP_VERSION__: JSON.stringify(pkgVersion),
+  },
   build: {
     target: process.env.TAURI_PLATFORM === "windows" ? "chrome105" : "safari13",
     minify: !process.env.TAURI_DEBUG ? "esbuild" : false,

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { listen } from '@tauri-apps/api/event';
 import { themeManager, type ThemeId } from './themes/ThemeManager';
 import { ThemeSwitcher } from './components/ThemeSwitcher';
 import { LanguageSwitcher } from './components/LanguageSwitcher';
@@ -10,6 +11,7 @@ import { HistoryChart } from './components/HistoryChart';
 import { ImportExport } from './components/ImportExport';
 import { ProviderHub } from './components/ProviderHub';
 import { MobileMenu } from './components/MobileMenu';
+import { CloseConfirmDialog } from './components/CloseConfirmDialog';
 import { Plus, Library } from 'lucide-react';
 import { api, type ProviderConfig } from './api';
 
@@ -21,9 +23,19 @@ export default function App() {
   const [modalOpen, setModalOpen] = useState(false);
   const [hubOpen, setHubOpen] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
+  const [closeDialogOpen, setCloseDialogOpen] = useState(false);
 
   useEffect(() => {
     loadProviders();
+  }, []);
+
+  useEffect(() => {
+    const unlisten = listen('close-requested', () => {
+      setCloseDialogOpen(true);
+    });
+    return () => {
+      unlisten.then(fn => fn());
+    };
   }, []);
 
   const loadProviders = async () => {
@@ -77,12 +89,12 @@ export default function App() {
       <header className="sticky top-0 z-40 backdrop-blur-md
                         bg-[var(--bg-card)]/80 border-b border-[var(--border-color)]
                         safe-top">
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2 sm:py-3
+        <div className="mx-auto w-full max-w-screen-2xl px-3 sm:px-6 lg:px-10 py-2 sm:py-3
                         flex items-center justify-between gap-2">
           <h1 className="text-sm sm:text-xl md:text-2xl font-bold bg-gradient-to-r
                         from-[var(--color-primary)] to-[var(--color-secondary)]
                         bg-clip-text text-transparent truncate min-w-0 flex-1">
-            {t('app.title')}
+            粮草用量-v{__APP_VERSION__}
           </h1>
           <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
             {/* 桌面端：完整功能按钮 */}
@@ -126,7 +138,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-8 space-y-4 sm:space-y-8">
+      <main className="mx-auto w-full max-w-screen-2xl px-3 sm:px-6 lg:px-10 py-4 sm:py-8 space-y-4 sm:space-y-8">
         {providers.length > 0 && (
           <div className="flex gap-1.5 sm:gap-2 overflow-x-auto pb-2 -mx-1 px-1
                           scrollbar-thin">
@@ -171,7 +183,7 @@ export default function App() {
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-3 sm:gap-4 lg:gap-5">
             {providers.map(provider => (
               <ProviderCard
                 key={provider.id}
@@ -215,6 +227,11 @@ export default function App() {
           onClose={() => setHubOpen(false)}
         />
       )}
+
+      <CloseConfirmDialog
+        open={closeDialogOpen}
+        onDismiss={() => setCloseDialogOpen(false)}
+      />
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import type { ProviderConfig } from '../api';
+import { ModalBackdrop } from './ModalBackdrop';
 
 const PROVIDER_PRESETS = [
   {
@@ -137,7 +138,7 @@ export function ConfigModal({ isOpen, provider, onClose, onSave }: Props) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <ModalBackdrop level="base">
       <div className="bg-[var(--bg-card)] rounded-xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto
                       border border-[var(--border-color)] shadow-[var(--shadow-card)]">
         <div className="flex items-center justify-between p-4 border-b border-[var(--border-color)]">
@@ -249,6 +250,6 @@ export function ConfigModal({ isOpen, provider, onClose, onSave }: Props) {
           </div>
         </form>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }

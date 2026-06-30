@@ -1,6 +1,6 @@
 {
   "app": {
-    "title": "AI 模型监控",
+    "title": "粮草用量",
     "addProvider": "添加 Provider",
     "noProviders": "还没有添加任何 Provider",
     "noProvidersHint": "点击右上角\"添加 Provider\"开始配置"

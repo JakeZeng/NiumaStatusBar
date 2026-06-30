@@ -72,14 +72,22 @@ export const api = {
   
   // ccSwitch 风格
   getProviderCatalog: () => invoke<ProviderPreset[]>('get_provider_catalog'),
-  enablePreset: (presetId: string, apiKey: string, customName?: string, refreshInterval?: number) => 
-    invoke<ProviderConfig>('enable_preset', { 
-      presetId, 
-      apiKey, 
-      customName, 
-      refreshInterval 
+  enablePreset: (presetId: string, apiKey: string, customName?: string, refreshInterval?: number) =>
+    invoke<ProviderConfig>('enable_preset', {
+      presetId,
+      apiKey,
+      customName,
+      refreshInterval
     }),
-  toggleProvider: (id: string, enabled: boolean) => 
+  toggleProvider: (id: string, enabled: boolean) =>
     invoke('toggle_provider', { id, enabled }),
   getActivePresetIds: () => invoke<string[]>('get_active_preset_ids'),
+
+  // 关闭行为偏好 + 窗口控制
+  getCloseAction: () => invoke<string | null>('get_close_action'),
+  setCloseAction: (action: 'minimize_to_tray' | 'exit') =>
+    invoke('set_close_action', { action }),
+  resetCloseAction: () => invoke('reset_close_action'),
+  windowHideToTray: () => invoke('window_hide_to_tray'),
+  appQuit: () => invoke('app_quit'),
 };

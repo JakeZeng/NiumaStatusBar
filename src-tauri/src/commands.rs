@@ -3,8 +3,13 @@ use crate::poller::Poller;
 use crate::providers::{ProviderConfig, ProviderManager, UsageStatus};
 use crate::storage::Database;
 use std::sync::Arc;
-use tauri::State;
+use tauri::{AppHandle, State, WebviewWindow};
 use uuid::Uuid;
+
+pub const CLOSE_ACTION_KEY: &str = "close_action";
+
+/// 关闭行为偏好的内存缓存类型（由 lib.rs 注入），供 `on_window_event` 同步读取
+pub type CloseActionCache = Arc<std::sync::RwLock<Option<String>>>;
 
 #[tauri::command]
 pub async fn get_providers(
@@ -213,4 +218,53 @@ pub async fn get_active_preset_ids(
         .map(|p| p.provider.clone())
         .collect();
     Ok(active_types)
+}
+
+// ============ 关闭行为偏好 + 窗口控制 ============
+
+/// 获取关闭按钮偏好：`"minimize_to_tray"` / `"exit"` / `None`（每次询问）
+#[tauri::command]
+pub async fn get_close_action(db: State<'_, Arc<Database>>) -> Result<Option<String>, String> {
+    db.get_setting(CLOSE_ACTION_KEY).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn set_close_action(
+    action: String,
+    db: State<'_, Arc<Database>>,
+    cache: State<'_, CloseActionCache>,
+) -> Result<(), String> {
+    if action != "minimize_to_tray" && action != "exit" {
+        return Err(format!("invalid close_action: {}", action));
+    }
+    db.set_setting(CLOSE_ACTION_KEY, &action)
+        .map_err(|e| e.to_string())?;
+    if let Ok(mut guard) = cache.write() {
+        *guard = Some(action);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn reset_close_action(
+    db: State<'_, Arc<Database>>,
+    cache: State<'_, CloseActionCache>,
+) -> Result<(), String> {
+    db.delete_setting(CLOSE_ACTION_KEY)
+        .map_err(|e| e.to_string())?;
+    if let Ok(mut guard) = cache.write() {
+        *guard = None;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn window_hide_to_tray(window: WebviewWindow) -> Result<(), String> {
+    window.hide().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn app_quit(app: AppHandle) -> Result<(), String> {
+    app.exit(0);
+    Ok(())
 }
