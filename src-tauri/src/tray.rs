@@ -6,6 +6,7 @@
 
 #![cfg(desktop)]
 
+use crate::logging::{AppLogger, LogCategory, LogLevel};
 use crate::providers::{ProviderConfig, ProviderManager, UsageStatus};
 use std::sync::Arc;
 use std::time::Duration;
@@ -21,6 +22,7 @@ const ROTATE_INTERVAL_SECS: u64 = 3;
 pub fn setup_tray<R: Runtime>(
     app: &AppHandle<R>,
     manager: Arc<ProviderManager>,
+    logger: Arc<AppLogger>,
 ) -> tauri::Result<()> {
     let show_item = MenuItem::with_id(app, "tray-show", "显示主窗口", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "tray-quit", "退出", true, None::<&str>)?;
@@ -31,14 +33,33 @@ pub fn setup_tray<R: Runtime>(
         .cloned()
         .ok_or_else(|| tauri::Error::AssetNotFound("default window icon".into()))?;
 
+    let logger_for_menu = logger.clone();
     TrayIconBuilder::with_id(TRAY_ID)
         .icon(icon)
         .tooltip("粮草用量｜加载中…")
         .menu(&menu)
         .show_menu_on_left_click(false)
-        .on_menu_event(|app, event| match event.id.as_ref() {
-            "tray-show" => show_main_window(app),
-            "tray-quit" => app.exit(0),
+        .on_menu_event(move |app, event| match event.id.as_ref() {
+            "tray-show" => {
+                logger_for_menu.log(
+                    LogLevel::Info,
+                    LogCategory::Tray,
+                    Some("tray-show".into()),
+                    "menu click: show",
+                    None,
+                );
+                show_main_window(app);
+            }
+            "tray-quit" => {
+                logger_for_menu.log(
+                    LogLevel::Info,
+                    LogCategory::Tray,
+                    Some("tray-quit".into()),
+                    "menu click: quit",
+                    None,
+                );
+                app.exit(0);
+            }
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
@@ -53,7 +74,7 @@ pub fn setup_tray<R: Runtime>(
         })
         .build(app)?;
 
-    spawn_tooltip_rotator(app.clone(), manager);
+    spawn_tooltip_rotator(app.clone(), manager, logger);
     Ok(())
 }
 
@@ -65,7 +86,7 @@ fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
-fn spawn_tooltip_rotator<R: Runtime>(app: AppHandle<R>, manager: Arc<ProviderManager>) {
+fn spawn_tooltip_rotator<R: Runtime>(app: AppHandle<R>, manager: Arc<ProviderManager>, logger: Arc<AppLogger>) {
     tauri::async_runtime::spawn(async move {
         let mut idx: usize = 0;
         let mut ticker = tokio::time::interval(Duration::from_secs(ROTATE_INTERVAL_SECS));
@@ -91,7 +112,15 @@ fn spawn_tooltip_rotator<R: Runtime>(app: AppHandle<R>, manager: Arc<ProviderMan
                 format_tooltip(provider, status.as_ref())
             };
 
-            let _ = tray.set_tooltip(Some(&text));
+            if let Err(e) = tray.set_tooltip(Some(&text)) {
+                logger.log(
+                    LogLevel::Warn,
+                    LogCategory::Tray,
+                    Some("tooltip".into()),
+                    "tooltip set failed",
+                    Some(serde_json::json!({ "error": e.to_string() })),
+                );
+            }
         }
     });
 }

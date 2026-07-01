@@ -12,7 +12,8 @@ import { ImportExport } from './components/ImportExport';
 import { ProviderHub } from './components/ProviderHub';
 import { MobileMenu } from './components/MobileMenu';
 import { CloseConfirmDialog } from './components/CloseConfirmDialog';
-import { Plus, Library } from 'lucide-react';
+import { LogViewer } from './components/LogViewer';
+import { Plus, Library, ScrollText } from 'lucide-react';
 import { api, type ProviderConfig } from './api';
 
 export default function App() {
@@ -22,6 +23,7 @@ export default function App() {
   const [editing, setEditing] = useState<ProviderConfig | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [hubOpen, setHubOpen] = useState(false);
+  const [logViewerOpen, setLogViewerOpen] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
 
@@ -114,6 +116,18 @@ export default function App() {
               <span>供应商中心</span>
             </button>
             <button
+              onClick={() => setLogViewerOpen(true)}
+              className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-lg
+                       bg-[var(--bg-card)] border border-[var(--border-color)]
+                       text-[var(--text-primary)]
+                       hover:border-[var(--color-primary)] hover:shadow-[var(--glow-primary)]
+                       transition-all text-sm"
+              title={t('logs.entry', '查看应用日志')}
+            >
+              <ScrollText className="w-4 h-4" />
+              <span>{t('logs.title', '日志')}</span>
+            </button>
+            <button
               onClick={openAddCustom}
               className="hidden sm:flex items-center gap-1.5 px-4 py-2 rounded-lg
                        bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-secondary)]
@@ -128,10 +142,11 @@ export default function App() {
             <div className="hidden md:block">
               <ThemeSwitcher />
             </div>
-            {/* 移动端：收纳"供应商中心/自定义/导入导出/语言/主题" */}
+            {/* 移动端：收纳"供应商中心/自定义/导入导出/语言/主题/日志" */}
             <MobileMenu
               onOpenHub={openHub}
               onOpenAddCustom={openAddCustom}
+              onOpenLogs={() => setLogViewerOpen(true)}
               onImportExport={() => { /* 由 hub 间接管理 */ }}
             />
           </div>
@@ -227,6 +242,11 @@ export default function App() {
           onClose={() => setHubOpen(false)}
         />
       )}
+
+      <LogViewer
+        open={logViewerOpen}
+        onClose={() => setLogViewerOpen(false)}
+      />
 
       <CloseConfirmDialog
         open={closeDialogOpen}

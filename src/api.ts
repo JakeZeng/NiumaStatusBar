@@ -52,6 +52,32 @@ export interface UsageStatus {
   quota_month_used: number | null;
 }
 
+// ===== 应用日志 =====
+// 与 Rust 端 LogEntry 字段对齐（snake_case）
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+export type LogCategory =
+  | 'http' | 'provider' | 'poller' | 'database'
+  | 'command' | 'setup' | 'tray' | 'system';
+
+export interface LogEntry {
+  id: number;
+  timestamp: number;
+  level: LogLevel;
+  category: LogCategory;
+  source: string | null;
+  message: string;
+  details: string | null;
+}
+
+export interface LogQuery {
+  keyword?: string;
+  levels?: LogLevel[];
+  categories?: LogCategory[];
+  since?: number;
+  until?: number;
+  limit?: number;
+}
+
 // API 封装
 export const api = {
   getProviders: () => invoke<ProviderConfig[]>('get_providers'),
@@ -90,4 +116,8 @@ export const api = {
   resetCloseAction: () => invoke('reset_close_action'),
   windowHideToTray: () => invoke('window_hide_to_tray'),
   appQuit: () => invoke('app_quit'),
+
+  // 应用日志
+  queryLogs: (q: LogQuery) => invoke<LogEntry[]>('query_logs', { q }),
+  clearLogs: () => invoke<void>('clear_logs'),
 };

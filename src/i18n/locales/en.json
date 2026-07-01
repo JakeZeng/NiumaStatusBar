@@ -49,5 +49,43 @@
     "error": "Error",
     "checking": "Checking",
     "disabled": "Disabled"
+  },
+  "logs": {
+    "entry": "View Application Logs",
+    "title": "Logs",
+    "subtitle": "Inspect application logs with keyword and event range filters",
+    "search": "Search logs...",
+    "level": "Level",
+    "category": "Category",
+    "timeRange": "Time Range",
+    "loading": "Loading...",
+    "empty": "No logs",
+    "count": "{{count}} entries",
+    "reset": "Reset",
+    "cancel": "Cancel",
+    "pausedHint": "Paused – new logs are not added in real time",
+    "levels": {
+      "debug": "Debug",
+      "info": "Info",
+      "warn": "Warn",
+      "error": "Error"
+    },
+    "timeRanges": {
+      "1h": "1 hour",
+      "24h": "24 hours",
+      "7d": "7 days",
+      "all": "All"
+    },
+    "actions": {
+      "clear": "Clear",
+      "close": "Close",
+      "pause": "Pause",
+      "resume": "Resume",
+      "followLatest": "Follow latest"
+    },
+    "confirm": {
+      "clear": "Confirm clear",
+      "clearMessage": "Clear all logs? This operation cannot be undone."
+    }
   }
 }

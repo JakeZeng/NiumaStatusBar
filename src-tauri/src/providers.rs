@@ -1,5 +1,7 @@
+use crate::logging::{redact_json_keys_string, AppLogger, LogCategory, LogLevel};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::RwLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,6 +59,8 @@ pub struct ProviderManager {
     client: reqwest::Client,
     providers: RwLock<Vec<ProviderConfig>>,
     statuses: RwLock<HashMap<String, UsageStatus>>,
+    /// 可选的应用日志器；由 lib.rs setup 阶段通过 set_logger 注入
+    logger: std::sync::Mutex<Option<Arc<AppLogger>>>,
 }
 
 impl ProviderManager {
@@ -68,7 +72,18 @@ impl ProviderManager {
                 .unwrap_or_default(),
             providers: RwLock::new(Vec::new()),
             statuses: RwLock::new(HashMap::new()),
+            logger: std::sync::Mutex::new(None),
         }
+    }
+
+    /// 注入日志器（lib.rs setup 阶段调用）。可重复调用覆盖。
+    pub fn set_logger(&self, logger: Arc<AppLogger>) {
+        *self.logger.lock().unwrap() = Some(logger);
+    }
+
+    /// 取日志器的便捷方法，无日志器时静默返回 None
+    fn logger_ref(&self) -> Option<Arc<AppLogger>> {
+        self.logger.lock().unwrap().clone()
     }
 
     pub async fn get_providers(&self) -> Vec<ProviderConfig> {
@@ -108,6 +123,26 @@ impl ProviderManager {
             "{}{}",
             provider.base_url.trim_end_matches('/'),
             provider.query_endpoint
+        );
+
+        let logger = self.logger_ref();
+        let log_helper = |lv: LogLevel, cat: LogCategory, msg: &str, det: Option<serde_json::Value>| {
+            if let Some(l) = &logger {
+                l.log(lv, cat, Some(provider.id.clone()), msg.to_string(), det);
+            }
+        };
+
+        // 阶段 A 入口埋点
+        log_helper(
+            LogLevel::Info,
+            LogCategory::Http,
+            "request start",
+            Some(serde_json::json!({
+                "provider": provider.provider,
+                "method": provider.query_method,
+                "url_no_query": strip_url_query(&url),
+                "headers_count": provider.query_headers.len() + 1, // +1 for Authorization
+            })),
         );
 
         let start = std::time::Instant::now();
@@ -184,19 +219,62 @@ impl ProviderManager {
                 "max_tokens": 1,
                 "stream": false
             });
-            eprintln!(
-                "[providers] 注入 body: provider={}, url={}, model={}, body={}",
-                provider.provider, url, model, minimal_body
+            log_helper(
+                LogLevel::Debug,
+                LogCategory::Provider,
+                "injected body",
+                Some(serde_json::json!({
+                    "provider": provider.provider,
+                    "url": strip_url_query(&url),
+                    "model": model,
+                    "body": serde_json::Value::String(redact_json_keys_string(
+                        &minimal_body.to_string(),
+                    )),
+                })),
             );
             request = request.json(&minimal_body);
-        } else if is_post && (is_chat_completions || is_ark_endpoint) {
-            eprintln!(
-                "[providers] 警告：POST 命中 Ark/chat-completions 但未注入 body。provider={}, url={}",
-                provider.provider, url
+        } else {
+            // 同步记录 body 注入决策，便于排查 "为什么 POST 但没发 body"
+            log_helper(
+                LogLevel::Debug,
+                LogCategory::Provider,
+                "body injection decision",
+                Some(serde_json::json!({
+                    "is_post": is_post,
+                    "is_volc": is_volc_coding,
+                    "is_chat_completions": is_chat_completions,
+                    "is_ark": is_ark_endpoint,
+                    "needs_body": needs_body,
+                })),
             );
         }
 
-        let response = request.send().await.map_err(|e| e.to_string())?;
+        if !needs_body && is_post && (is_chat_completions || is_ark_endpoint) {
+            log_helper(
+                LogLevel::Warn,
+                LogCategory::Provider,
+                "POST hits Ark/chat-completions but body not injected",
+                Some(serde_json::json!({
+                    "provider": provider.provider,
+                    "url": strip_url_query(&url),
+                })),
+            );
+        }
+
+        // 阶段 B：HTTP 发送 + 错误埋点
+        let response = request.send().await.map_err(|e| {
+            let latency = start.elapsed().as_millis() as i64;
+            log_helper(
+                LogLevel::Error,
+                LogCategory::Http,
+                "network error",
+                Some(serde_json::json!({
+                    "error_message": e.to_string(),
+                    "latency_ms": latency,
+                })),
+            );
+            e.to_string()
+        })?;
         let latency = start.elapsed().as_millis() as i64;
 
         // 提取所有响应头（用于 Coding Plan 等基于响应头的额度）
@@ -235,6 +313,17 @@ impl ProviderManager {
 
         // 4) 错误处理：HTTP 错误码 → 显式错误，让前端能看到原因而不是静默"等待数据"
         if status_code >= 400 {
+            let body_excerpt = truncate(&body, 300);
+            log_helper(
+                LogLevel::Error,
+                LogCategory::Http,
+                "http error response",
+                Some(serde_json::json!({
+                    "status": status_code,
+                    "url": strip_url_query(&url),
+                    "body_truncated": body_excerpt,
+                })),
+            );
             return Err(format!(
                 "HTTP {} 来自 {}：{}",
                 status_code,
@@ -256,6 +345,15 @@ impl ProviderManager {
                         .and_then(|v| v.as_str())
                         .unwrap_or("");
                     if code.unwrap_or(0) != 0 || !msg.is_empty() && msg != "success" {
+                        log_helper(
+                            LogLevel::Warn,
+                            LogCategory::Provider,
+                            "minimax business error",
+                            Some(serde_json::json!({
+                                "status_code": code,
+                                "message": msg,
+                            })),
+                        );
                         return Err(format!(
                             "MiniMax 业务错误 code={:?} msg={} body={}",
                             code,
@@ -264,11 +362,29 @@ impl ProviderManager {
                         ));
                     }
                 }
+                log_helper(
+                    LogLevel::Warn,
+                    LogCategory::Provider,
+                    "parse warning",
+                    Some(serde_json::json!({
+                        "reason": "minimax_missing_model_remains",
+                        "raw_excerpt": truncate(&body, 200),
+                    })),
+                );
                 return Err(format!(
                     "MiniMax 响应未包含 model_remains。原始响应：{}",
                     truncate(&body, 300)
                 ));
             } else {
+                log_helper(
+                    LogLevel::Warn,
+                    LogCategory::Provider,
+                    "parse warning",
+                    Some(serde_json::json!({
+                        "reason": "minimax_not_json",
+                        "raw_excerpt": truncate(&body, 200),
+                    })),
+                );
                 return Err(format!(
                     "MiniMax 响应不是 JSON。原始响应：{}",
                     truncate(&body, 300)
@@ -282,6 +398,14 @@ impl ProviderManager {
             && status.quota_week_remaining.is_none()
             && status.quota_month_remaining.is_none()
         {
+            log_helper(
+                LogLevel::Warn,
+                LogCategory::Provider,
+                "volcengine missing rate-limit headers",
+                Some(serde_json::json!({
+                    "headers": headers_map.keys().collect::<Vec<_>>(),
+                })),
+            );
             return Err(format!(
                 "火山方舟未返回 X-RateLimit-* 响应头。请确认 API Key 已开通 Coding Plan / Token Plan 套餐。响应头：{:?}，body：{}",
                 headers_map.keys().collect::<Vec<_>>(),
@@ -422,5 +546,13 @@ fn truncate(s: &str, max: usize) -> String {
         t
     } else {
         s.to_string()
+    }
+}
+
+/// 截断 URL 上的 query string（避免 token 等敏感参数进日志）
+fn strip_url_query(url: &str) -> &str {
+    match url.find('?') {
+        Some(idx) => &url[..idx],
+        None => url,
     }
 }

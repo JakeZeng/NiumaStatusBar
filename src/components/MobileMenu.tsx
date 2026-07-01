@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { MoreVertical, Globe, Palette, Download, X, Library, Plus } from 'lucide-react';
+import { MoreVertical, Globe, Palette, Download, X, Library, Plus, ScrollText } from 'lucide-react';
 import { themeManager, THEMES, type ThemeId } from '../themes/ThemeManager';
 import { ImportExport } from './ImportExport';
 
@@ -8,14 +8,15 @@ interface Props {
   onOpenHub?: () => void;
   onOpenAddCustom?: () => void;
   onImportExport?: () => void;
+  onOpenLogs?: () => void;
 }
 
 /**
  * 移动端右上角"更多"菜单
- * 收纳：供应商中心、自定义、导入导出、语言、主题
+ * 收纳：供应商中心、自定义、导入导出、日志、语言、主题
  * 仅在 < sm 屏幕下显示
  */
-export function MobileMenu({ onOpenHub, onOpenAddCustom, onImportExport }: Props) {
+export function MobileMenu({ onOpenHub, onOpenAddCustom, onImportExport, onOpenLogs }: Props) {
   const { i18n } = useTranslation();
   const [open, setOpen] = useState(false);
   const [subPage, setSubPage] = useState<'main' | 'theme' | 'language' | 'io'>('main');
@@ -61,6 +62,11 @@ export function MobileMenu({ onOpenHub, onOpenAddCustom, onImportExport }: Props
     close();
   };
 
+  const handleLogs = () => {
+    onOpenLogs?.();
+    close();
+  };
+
   const currentLang = i18n.language || 'zh';
 
   return (
@@ -103,6 +109,16 @@ export function MobileMenu({ onOpenHub, onOpenAddCustom, onImportExport }: Props
               >
                 <Plus className="w-4 h-4 text-[var(--color-primary)]" />
                 <span className="text-sm flex-1">自定义 Provider</span>
+              </button>
+              <button
+                onClick={handleLogs}
+                className="w-full flex items-center gap-3 px-4 py-3
+                         hover:bg-[var(--bg-overlay)] active:bg-[var(--bg-overlay)]
+                         transition-colors text-left
+                         text-[var(--text-primary)]"
+              >
+                <ScrollText className="w-4 h-4 text-[var(--color-primary)]" />
+                <span className="text-sm flex-1">日志</span>
               </button>
               <div className="my-1 border-t border-[var(--border-color)]/50" />
               <button

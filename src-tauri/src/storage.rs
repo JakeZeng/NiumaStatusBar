@@ -1,5 +1,7 @@
+use crate::logging::{LogEntry, LogQuery};
 use crate::providers::{ProviderConfig, UsageStatus};
-use rusqlite::{params, Connection, Result};
+use rusqlite::types::Value as SqlValue;
+use rusqlite::{params, params_from_iter, Connection, Result};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -68,6 +70,30 @@ impl Database {
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             )",
+            [],
+        )?;
+
+        // 应用日志表（Key 不入库；categories 与 levels 由 enum 字符串约束）
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS app_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp INTEGER NOT NULL,
+                level TEXT NOT NULL,
+                category TEXT NOT NULL,
+                source TEXT,
+                message TEXT NOT NULL,
+                details TEXT
+            )",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_app_logs_time
+             ON app_logs(timestamp DESC)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_app_logs_level_cat
+             ON app_logs(level, category)",
             [],
         )?;
 
@@ -250,4 +276,128 @@ impl Database {
         conn.execute("DELETE FROM settings WHERE key = ?1", params![key])?;
         Ok(())
     }
+
+    // ===== 应用日志 (app_logs) =====
+
+    pub fn save_log(&self, entry: &LogEntry) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO app_logs (timestamp, level, category, source, message, details)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                entry.timestamp,
+                entry.level.to_string(),
+                entry.category.to_string(),
+                entry.source,
+                entry.message,
+                entry.details,
+            ],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// 动态拼 WHERE 子句；所有值都用 `?` 绑定（防注入）。
+    /// 关键字 `'` 转义为 `''` 后拼进 LIKE pattern。
+    pub fn query_logs(&self, q: &LogQuery) -> Result<Vec<LogEntry>> {
+        let conn = self.conn.lock().unwrap();
+        let mut sql = String::from(
+            "SELECT id, timestamp, level, category, source, message, details
+             FROM app_logs WHERE 1=1",
+        );
+        let mut bind: Vec<SqlValue> = Vec::new();
+
+        if let Some(keyword) = &q.keyword {
+            if !keyword.is_empty() {
+                let escaped = keyword.replace('\'', "''");
+                let pat = format!("%{}%", escaped);
+                sql.push_str(" AND (message LIKE ?1 OR details LIKE ?1)");
+                bind.push(SqlValue::Text(pat));
+            }
+        }
+
+        if let Some(levels) = &q.levels {
+            if !levels.is_empty() {
+                let placeholders: Vec<String> = (0..levels.len())
+                    .map(|i| format!("?{}", bind.len() + i + 1))
+                    .collect();
+                sql.push_str(&format!(" AND level IN ({})", placeholders.join(",")));
+                for lv in levels {
+                    bind.push(SqlValue::Text(lv.to_string()));
+                }
+            }
+        }
+
+        if let Some(cats) = &q.categories {
+            if !cats.is_empty() {
+                let placeholders: Vec<String> = (0..cats.len())
+                    .map(|i| format!("?{}", bind.len() + i + 1))
+                    .collect();
+                sql.push_str(&format!(" AND category IN ({})", placeholders.join(",")));
+                for cat in cats {
+                    bind.push(SqlValue::Text(cat.to_string()));
+                }
+            }
+        }
+
+        if let Some(since) = q.since {
+            sql.push_str(&format!(" AND timestamp >= ?{}", bind.len() + 1));
+            bind.push(SqlValue::Integer(since));
+        }
+        if let Some(until) = q.until {
+            sql.push_str(&format!(" AND timestamp <= ?{}", bind.len() + 1));
+            bind.push(SqlValue::Integer(until));
+        }
+
+        sql.push_str(" ORDER BY timestamp DESC");
+        let limit = q.limit.unwrap_or(200).clamp(1, 1000);
+        sql.push_str(&format!(" LIMIT ?{}", bind.len() + 1));
+        bind.push(SqlValue::Integer(limit));
+
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(params_from_iter(bind.iter()), |row| {
+            let level_str: String = row.get(2)?;
+            let cat_str: String = row.get(3)?;
+            Ok(LogEntry {
+                id: row.get(0)?,
+                timestamp: row.get(1)?,
+                level: parse_log_level(&level_str, 2)?,
+                category: parse_log_category(&cat_str, 3)?,
+                source: row.get(4)?,
+                message: row.get(5)?,
+                details: row.get(6)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn clear_logs(&self) -> Result<usize> {
+        let conn = self.conn.lock().unwrap();
+        let n = conn.execute("DELETE FROM app_logs", [])?;
+        Ok(n)
+    }
+
+    pub fn cleanup_old_logs(&self, retain_days: i64) -> Result<usize> {
+        let conn = self.conn.lock().unwrap();
+        let cutoff = chrono::Utc::now().timestamp() - retain_days * 24 * 3600;
+        let n = conn.execute(
+            "DELETE FROM app_logs WHERE timestamp < ?1",
+            params![cutoff],
+        )?;
+        Ok(n)
+    }
+}
+
+/// 从字符串解析 LogLevel；解析失败转为 rusqlite::Error (InvalidColumnType)
+fn parse_log_level(s: &str, col_idx: usize) -> Result<crate::logging::LogLevel> {
+    use std::str::FromStr;
+    crate::logging::LogLevel::from_str(s).map_err(|e| {
+        rusqlite::Error::InvalidColumnType(col_idx, format!("LogLevel({})", e), rusqlite::types::Type::Text)
+    })
+}
+
+fn parse_log_category(s: &str, col_idx: usize) -> Result<crate::logging::LogCategory> {
+    use std::str::FromStr;
+    crate::logging::LogCategory::from_str(s).map_err(|e| {
+        rusqlite::Error::InvalidColumnType(col_idx, format!("LogCategory({})", e), rusqlite::types::Type::Text)
+    })
 }
