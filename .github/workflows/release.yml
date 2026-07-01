@@ -278,6 +278,32 @@ jobs:
             echo "Patched $GRADLE_FILE: proguard-android-optimize.txt -> proguard-android.txt"
           fi
 
+          # Ensure app/proguard-rules.pro exists with our WRY keep rules.
+          # `tauri android init --ci` regenerates gen/android/ and may
+          # overwrite or create a default proguard-rules.pro, so we write
+          # the file explicitly after init. This is belt-and-braces with
+          # the @get:Keep/@set:Keep annotations on MainActivity.id.
+          PROGUARD_FILE=src-tauri/gen/android/app/proguard-rules.pro
+          cat > "$PROGUARD_FILE" <<'EOF'
+# WRY v0.55.1 JNI keep rules for AI Model Monitor.
+# R8 must keep MainActivity.getId()/setId(int) because WRY calls them
+# by name via JNI (GetMethodID only searches the receiver class).
+-dontobfuscate
+
+-keep class com.aimonitor.app.MainActivity {
+    int getId();
+    void setId(int);
+}
+-keep class com.aimonitor.app.WryActivity {
+    int getId();
+    void setId(int);
+}
+-keep class com.aimonitor.app.MainActivity { *; }
+-keep class com.aimonitor.app.WryActivity { *; }
+EOF
+          echo "--- $PROGUARD_FILE ---"
+          cat "$PROGUARD_FILE"
+
           # Re-add `signingConfigs` block after the `namespace = ...` line.
           # The block reads `keystore.properties` from the app subproject's
           # dir at gradle script-eval time; if the file is missing (no
@@ -363,24 +389,31 @@ jobs:
             # 3. Inject `override var id: Int = 0`. The parent property
             #    is patched to `open` by BuildTask.kt at cargo-build time;
             #    by the time kotlinc runs, the parent is open and this
-            #    override compiles. The `@Keep` annotation tells R8 in
-            #    `proguard-android-optimize.txt` to preserve the
-            #    generated `getId()` / `setId(int)` methods on this
-            #    class's method table — without it, R8 may vertical-merge
-            #    MainActivity.getId() (which trivially forwards to
-            #    super.getId()) into its callers and then strip the
-            #    declaration, which makes JNI's `GetMethodID` on
-            #    `MainActivity` fail with NoSuchMethodError even though
-            #    `WryActivity.getId()` is correctly kept.
-            if ! grep -q '^  @Keep$' "$MAIN_ACTIVITY" \
-               && ! grep -q '^  override var id: Int = 0$' "$MAIN_ACTIVITY"; then
+            #    override compiles.
+            #
+            #    CRITICAL: androidx.annotation.Keep does NOT support Kotlin's
+            #    PROPERTY target. Writing `@Keep` on a `var` only annotates the
+            #    backing field, NOT the synthetic `getId()` / `setId(int)`
+            #    methods. R8 (especially with `proguard-android-optimize.txt`)
+            #    then renames or vertical-merges those accessors, so JNI's
+            #    `GetMethodID` on `MainActivity` fails with NoSuchMethodError.
+            #    We must use `@get:Keep @set:Keep` to keep the accessor
+            #    methods themselves. This is belt-and-braces with the
+            #    `-keep class ... { int getId(); void setId(int); }` rules in
+            #    `proguard-rules.pro` and `-dontobfuscate`.
+            if ! grep -q '^  override var id: Int = 0$' "$MAIN_ACTIVITY"; then
               # Add the @Keep import (idempotent).
               if ! grep -q 'import androidx.annotation.Keep' "$MAIN_ACTIVITY"; then
                 sed -i 's|^import android.os.Bundle$|&\nimport androidx.annotation.Keep|' "$MAIN_ACTIVITY"
               fi
-              # Inject the @Keep-annotated property just before the
-              # class closing brace (`^}$` at 0 indent).
-              sed -i 's|^}$|  @Keep\n  override var id: Int = 0\n}|' "$MAIN_ACTIVITY"
+              # Inject the property just before the class closing brace (`^}$` at 0 indent).
+              sed -i 's|^}$|  @get:Keep\n  @set:Keep\n  override var id: Int = 0\n}|' "$MAIN_ACTIVITY"
+            else
+              # Property already exists (e.g. from a committed fix). Make sure
+              # it uses the accessor-targeting @Keep form, not plain @Keep.
+              if grep -q '^  @Keep$' "$MAIN_ACTIVITY" && ! grep -q '^  @get:Keep$' "$MAIN_ACTIVITY"; then
+                sed -i 's|^  @Keep$|  @get:Keep\n  @set:Keep|' "$MAIN_ACTIVITY"
+              fi
             fi
             echo "--- MainActivity.kt (after WRY getId() override) ---"
             cat "$MAIN_ACTIVITY"

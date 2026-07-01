@@ -60,7 +60,7 @@ android {
             signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 *fileTree(".") { include("**/*.pro") }
-                    .plus(getDefaultProguardFile("proguard-android-optimize.txt"))
+                    .plus(getDefaultProguardFile("proguard-android.txt"))
                     .toList().toTypedArray()
             )
         }
