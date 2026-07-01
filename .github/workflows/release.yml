@@ -303,6 +303,12 @@ jobs:
             '-keep class com.aimonitor.app.WryActivity { int getId(); void setId(int); }' \
             '-keep class com.aimonitor.app.MainActivity { *; }' \
             '-keep class com.aimonitor.app.WryActivity { *; }' \
+            '# WRY companion classes are only loaded via Class.forName in Rust.kt.' \
+            '# R8/shrink cannot see these JNI reflection references, so keep them.' \
+            '-keep class com.aimonitor.app.RustWebChromeClient { *; }' \
+            '-keep class com.aimonitor.app.RustWebViewClient { *; }' \
+            '-keep class com.aimonitor.app.Ipc { *; }' \
+            '-keep class com.aimonitor.app.PermissionHelper { *; }' \
             >> "$PROGUARD_FILE"
           echo "--- $PROGUARD_FILE ---"
           cat "$PROGUARD_FILE"
@@ -628,6 +634,15 @@ jobs:
           # consumer-rules.pro was populated by the cp above (tauri-android's
           # proguard rules); only truncate it as a fallback.
           [ -s "$API/consumer-rules.pro" ] || : > "$API/consumer-rules.pro"
+          # R8/shrink sees no static references to the WRY companion classes
+          # because Rust.kt only loads them via Class.forName for JNI. Keep
+          # them explicitly so they survive release minification.
+          printf '%s\n' \
+            '-keep class com.aimonitor.app.RustWebChromeClient { *; }' \
+            '-keep class com.aimonitor.app.RustWebViewClient { *; }' \
+            '-keep class com.aimonitor.app.Ipc { *; }' \
+            '-keep class com.aimonitor.app.PermissionHelper { *; }' \
+            >> "$API/consumer-rules.pro"
           echo "--- tauri-api scaffold ---"
           find "$API" -type f | sort
           echo "--- copy of tauri-android source ---"
