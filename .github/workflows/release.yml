@@ -634,6 +634,46 @@ jobs:
           find "$TAURI_ANDROID_SRC/src/main/java" -type f | wc -l
           echo "files copied"
 
+          # BELT-AND-BRACES: copy the WRY v0.55.1 companion .kt files from our
+          # vendored copy under gen/android/.tauri/wry-kotlin/ into the tauri-api
+          # source root. In v0.1.21 the apk dex was missing
+          # RustWebChromeClient / RustWebViewClient / Ipc / PermissionHelper —
+          # WRY's `build.rs` only emits them on a cold `cargo build` (it sets
+          # `cargo:rerun-if-env-changed=WRY_ANDROID_KOTLIN_FILES_OUT_DIR`, but
+          # when cargo's incremental build cache is hot and the env has not
+          # actually changed, the build script is skipped and the files are
+          # never regenerated). At runtime Rust.wryCreate() calls
+          # `Class.forName("com.aimonitor.app.RustWebChromeClient")` via JNI,
+          # which throws `ClassNotFoundException` — Android collapses the
+          # exception class into a bare `JavaException` and the app aborts
+          # during `WryActivity.onCreate`. Copying the vendored files
+          # unconditionally after `tauri android init --ci` guarantees they
+          # end up in the tauri-api source tree regardless of cargo cache
+          # state. Source files were copied verbatim from
+          # https://github.com/tauri-apps/wry/tree/wry-v0.55.1/src/android/kotlin
+          # with the `{{package}}` / `{{class-extension}}` / `{{class-init}}`
+          # placeholders already substituted for this app's package.
+          #
+          # NOTE: this step runs after `cd src-tauri`, so all relative
+          # paths are relative to that directory. We `cd "$GITHUB_WORKSPACE"`
+          # to compute the absolute vendor path first.
+          cd "$GITHUB_WORKSPACE"
+          WRY_VENDOR="$GITHUB_WORKSPACE/src-tauri/gen/android/.tauri/wry-kotlin/com/aimonitor/app"
+          if [ -d "$WRY_VENDOR" ]; then
+            mkdir -p "src-tauri/$API/src/main/java/com/aimonitor/app"
+            for f in "$WRY_VENDOR"/*.kt; do
+              [ -e "$f" ] || continue
+              cp -f "$f" "src-tauri/$API/src/main/java/com/aimonitor/app/$(basename "$f")"
+            done
+            echo "--- wry companion .kt files (vendored fallback) ---"
+            ls -la "src-tauri/$API/src/main/java/com/aimonitor/app/" \
+              | grep -E 'RustWebChromeClient|RustWebViewClient|Ipc|PermissionHelper' || true
+          else
+            echo "::warning::WRY vendor dir $WRY_VENDOR not found; WRY companion .kt files may be missing"
+          fi
+          # Restore the cwd that the rest of the step expects.
+          cd src-tauri
+
       - name: Patch BuildTask to bypass tauri-cli android-studio-script
         run: |
           set -e
