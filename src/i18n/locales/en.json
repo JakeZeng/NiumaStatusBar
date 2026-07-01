@@ -26,7 +26,12 @@
     "presets": "Quick Presets",
     "save": "Save",
     "cancel": "Cancel",
-    "delete": "Delete"
+    "delete": "Delete",
+    "quotaLabel5h": "⏱ 5H Quota",
+    "quotaLabelWeek": "📅 Weekly Quota",
+    "quotaLabelMonth": "📆 Monthly Quota",
+    "quotaWaiting": "Waiting for quota data...",
+    "quotaTotalRemaining": "Total Remaining"
   },
   "chart": {
     "balanceTrend": "Balance Trend",

@@ -26,7 +26,12 @@
     "presets": "快速预设",
     "save": "保存",
     "cancel": "取消",
-    "delete": "删除"
+    "delete": "删除",
+    "quotaLabel5h": "⏱ 5小时额度",
+    "quotaLabelWeek": "📅 周额度",
+    "quotaLabelMonth": "📆 月额度",
+    "quotaWaiting": "等待额度数据返回...",
+    "quotaTotalRemaining": "总剩余"
   },
   "chart": {
     "balanceTrend": "余额趋势",

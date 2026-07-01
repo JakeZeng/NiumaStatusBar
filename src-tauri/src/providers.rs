@@ -35,6 +35,8 @@ pub struct UsageStatus {
     // === 多周期额度（MiniMax / Coding Plan）===
     /// 5 小时窗口：剩余
     pub quota_5h_remaining: Option<f64>,
+    /// 5 小时窗口：剩余百分比（国内 minimax 用此字段）
+    pub quota_5h_remaining_percent: Option<f64>,
     /// 5 小时窗口：总额
     pub quota_5h_total: Option<f64>,
     /// 5 小时窗口：已用
@@ -42,6 +44,8 @@ pub struct UsageStatus {
 
     /// 周窗口：剩余
     pub quota_week_remaining: Option<f64>,
+    /// 周窗口：剩余百分比（国内 minimax 用此字段）
+    pub quota_week_remaining_percent: Option<f64>,
     /// 周窗口：总额
     pub quota_week_total: Option<f64>,
     /// 周窗口：已用
@@ -307,7 +311,26 @@ impl ProviderManager {
 
             // 3) MiniMax Coding Plan / Token Plan
             if provider.provider == "minimax_coding" || provider.provider == "minimax_token" {
-                parse_minimax_remains(json, &mut status);
+                let hits = parse_minimax_remains(json, &mut status);
+                log_helper(
+                    LogLevel::Debug,
+                    LogCategory::Provider,
+                    "minimax parse result",
+                    Some(serde_json::json!({
+                        "provider": provider.provider,
+                        "hits": hits,
+                        "has_5h_percent": status.quota_5h_remaining_percent.is_some(),
+                        "has_5h_remaining": status.quota_5h_remaining.is_some(),
+                        "has_week_percent": status.quota_week_remaining_percent.is_some(),
+                        "has_week_remaining": status.quota_week_remaining.is_some(),
+                        "model_count": parsed_json
+                            .as_ref()
+                            .and_then(|j| j.get("model_remains"))
+                            .and_then(|v| v.as_array())
+                            .map(|a| a.len())
+                            .unwrap_or(0),
+                    })),
+                );
             }
         }
 
@@ -481,62 +504,111 @@ fn parse_generic_json(json: &serde_json::Value, status: &mut UsageStatus) {
 }
 
 /// MiniMax Coding Plan / Token Plan 专用解析
-/// 响应示例:
+///
+/// 响应示例（国内）：
 /// {
 ///   "base_resp": { "status_code": 0, "status_msg": "success" },
-///   "model_remains": [
-///     { "model_name": "MiniMax-M2.7",
-///       "current_interval_total_count": 1200,
-///       "current_interval_usage_count": 800,
-///       "weekly_total_count": 9000,
-///       "weekly_usage_count": 5000
-///     }
-///   ]
+///   "model_remains": [{
+///     "model_name": "MiniMax-M2.7",
+///     "current_interval_remaining_percent": 84,
+///     "current_weekly_remaining_percent": 85,
+///     "current_interval_total_count": 0,
+///     "current_interval_usage_count": 0,
+///     "current_weekly_total_count": 0,
+///     "current_weekly_usage_count": 0
+///   }]
 /// }
-fn parse_minimax_remains(json: &serde_json::Value, status: &mut UsageStatus) {
-    // 兼容 MiniMax 国内 / 海外两种格式
+///
+/// 海外响应字段：interval_total_count / interval_usage_count / weekly_total_count /
+/// weekly_usage_count / week_total_count / week_usage_count。
+///
+/// 解析策略：percent 字段优先（国内默认走这条）；保留 total / used fallback 链
+/// 兼容海外接口。返回命中的字段名列表，供调用方打 Debug 日志。
+fn parse_minimax_remains(json: &serde_json::Value, status: &mut UsageStatus) -> Vec<&'static str> {
     let model_remains = json
         .get("model_remains")
         .or(json.get("data"))
         .and_then(|v| v.as_array());
 
-    if let Some(arr) = model_remains {
-        if let Some(first) = arr.first() {
-            // 5 小时窗口
-            if status.quota_5h_total.is_none() {
-                status.quota_5h_total = first
-                    .get("current_interval_total_count")
-                    .or(first.get("interval_total_count"))
-                    .and_then(|v| v.as_f64());
-            }
-            if status.quota_5h_used.is_none() {
-                status.quota_5h_used = first
-                    .get("current_interval_usage_count")
-                    .or(first.get("interval_usage_count"))
-                    .and_then(|v| v.as_f64());
-            }
-            if let (Some(total), Some(used)) = (status.quota_5h_total, status.quota_5h_used) {
-                status.quota_5h_remaining = Some((total - used).max(0.0));
-            }
+    let mut hits: Vec<&'static str> = Vec::new();
+    let Some(arr) = model_remains else { return hits; };
+    let Some(first) = arr.first() else { return hits; };
 
-            // 周窗口
-            if status.quota_week_total.is_none() {
-                status.quota_week_total = first
-                    .get("weekly_total_count")
-                    .or(first.get("week_total_count"))
-                    .and_then(|v| v.as_f64());
-            }
-            if status.quota_week_used.is_none() {
-                status.quota_week_used = first
-                    .get("weekly_usage_count")
-                    .or(first.get("week_usage_count"))
-                    .and_then(|v| v.as_f64());
-            }
-            if let (Some(total), Some(used)) = (status.quota_week_total, status.quota_week_used) {
-                status.quota_week_remaining = Some((total - used).max(0.0));
-            }
+    // ===== 5 小时窗口 =====
+    if status.quota_5h_remaining_percent.is_none() {
+        if let Some(v) = first
+            .get("current_interval_remaining_percent")
+            .and_then(|v| v.as_f64())
+        {
+            status.quota_5h_remaining_percent = Some(v);
+            hits.push("5h:current_interval_remaining_percent");
         }
     }
+    if status.quota_5h_total.is_none() {
+        if let Some(v) = first
+            .get("current_interval_total_count")
+            .or(first.get("interval_total_count"))
+            .and_then(|v| v.as_f64())
+        {
+            status.quota_5h_total = Some(v);
+            hits.push("5h:current_interval_total_count");
+        }
+    }
+    if status.quota_5h_used.is_none() {
+        if let Some(v) = first
+            .get("current_interval_usage_count")
+            .or(first.get("interval_usage_count"))
+            .and_then(|v| v.as_f64())
+        {
+            status.quota_5h_used = Some(v);
+            hits.push("5h:current_interval_usage_count");
+        }
+    }
+    if status.quota_5h_remaining.is_none() {
+        if let (Some(t), Some(u)) = (status.quota_5h_total, status.quota_5h_used) {
+            status.quota_5h_remaining = Some((t - u).max(0.0));
+        }
+    }
+
+    // ===== 周窗口 =====
+    if status.quota_week_remaining_percent.is_none() {
+        if let Some(v) = first
+            .get("current_weekly_remaining_percent")
+            .and_then(|v| v.as_f64())
+        {
+            status.quota_week_remaining_percent = Some(v);
+            hits.push("week:current_weekly_remaining_percent");
+        }
+    }
+    if status.quota_week_total.is_none() {
+        if let Some(v) = first
+            .get("current_weekly_total_count")
+            .or(first.get("weekly_total_count"))
+            .or(first.get("week_total_count"))
+            .and_then(|v| v.as_f64())
+        {
+            status.quota_week_total = Some(v);
+            hits.push("week:current_weekly_total_count");
+        }
+    }
+    if status.quota_week_used.is_none() {
+        if let Some(v) = first
+            .get("current_weekly_usage_count")
+            .or(first.get("weekly_usage_count"))
+            .or(first.get("week_usage_count"))
+            .and_then(|v| v.as_f64())
+        {
+            status.quota_week_used = Some(v);
+            hits.push("week:current_weekly_usage_count");
+        }
+    }
+    if status.quota_week_remaining.is_none() {
+        if let (Some(t), Some(u)) = (status.quota_week_total, status.quota_week_used) {
+            status.quota_week_remaining = Some((t - u).max(0.0));
+        }
+    }
+
+    hits
 }
 
 fn truncate(s: &str, max: usize) -> String {

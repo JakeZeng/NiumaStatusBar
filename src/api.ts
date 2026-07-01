@@ -42,9 +42,11 @@ export interface UsageStatus {
   avg_latency: number | null;
   last_error: string | null;
   quota_5h_remaining: number | null;
+  quota_5h_remaining_percent: number | null;
   quota_5h_total: number | null;
   quota_5h_used: number | null;
   quota_week_remaining: number | null;
+  quota_week_remaining_percent: number | null;
   quota_week_total: number | null;
   quota_week_used: number | null;
   quota_month_remaining: number | null;

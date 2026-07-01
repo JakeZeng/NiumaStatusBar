@@ -15,13 +15,26 @@ interface QuotaRowProps {
   remaining: number | null | undefined;
   total: number | null | undefined;
   used: number | null | undefined;
+  remainingPercent?: number | null;
 }
 
-function QuotaRow({ label, remaining, total, used }: QuotaRowProps) {
-  const hasData = remaining !== null && remaining !== undefined;
-  const percent = total && used !== null && used !== undefined && total > 0
-    ? (used / total) * 100
-    : 0;
+function QuotaRow({ label, remaining, total, used, remainingPercent }: QuotaRowProps) {
+  const hasPercent = remainingPercent != null;
+  const hasTotalUsed =
+    total != null && total !== undefined && total > 0 &&
+    used != null && used !== undefined;
+  const hasRemaining =
+    !hasPercent && !hasTotalUsed &&
+    remaining != null && remaining !== undefined;
+  const hasData = hasPercent || hasTotalUsed || hasRemaining;
+
+  const percent = hasPercent
+    ? remainingPercent!
+    : hasTotalUsed
+      ? (used! / total!) * 100
+      : hasRemaining
+        ? Math.min(remaining!, 100)
+        : 0;
 
   return (
     <div className="space-y-1">
@@ -29,17 +42,21 @@ function QuotaRow({ label, remaining, total, used }: QuotaRowProps) {
         <span className="text-xs text-[var(--text-secondary)]">{label}</span>
         <span className="text-sm font-semibold text-[var(--text-primary)]">
           {hasData ? (
-            <>
-              <span className="text-[var(--color-primary)]">{Math.floor(remaining!)}</span>
-              <span className="text-[var(--text-muted)] text-xs"> / {Math.floor(total || 0)}</span>
-            </>
+            hasPercent ? (
+              <span className="text-[var(--color-primary)]">{remainingPercent!.toFixed(0)}%</span>
+            ) : (
+              <>
+                <span className="text-[var(--color-primary)]">{Math.floor(remaining ?? 0)}</span>
+                <span className="text-[var(--text-muted)] text-xs"> / {Math.floor(total || 0)}</span>
+              </>
+            )
           ) : '--'}
         </span>
       </div>
       <div className="relative h-1.5 bg-[var(--bg-secondary)] rounded-full overflow-hidden">
         {hasData && (
           <div
-            className="absolute inset-y-0 left-0 bg-gradient-to-r 
+            className="absolute inset-y-0 left-0 bg-gradient-to-r
                        from-[var(--color-primary)] to-[var(--color-secondary)]
                        rounded-full transition-all duration-500"
             style={{ width: `${Math.min(percent, 100)}%` }}
@@ -109,9 +126,13 @@ export function ProviderCard({ provider, onEdit }: Props) {
     provider.provider === 'volcengine_coding' ||
     provider.provider === 'volcengine_token';
 
-  const hasQuota5h = status?.quota_5h_remaining !== null && status?.quota_5h_remaining !== undefined;
-  const hasQuotaWeek = status?.quota_week_remaining !== null && status?.quota_week_remaining !== undefined;
-  const hasQuotaMonth = status?.quota_month_remaining !== null && status?.quota_month_remaining !== undefined;
+  const hasQuota5h =
+    status?.quota_5h_remaining_percent != null ||
+    status?.quota_5h_remaining != null;
+  const hasQuotaWeek =
+    status?.quota_week_remaining_percent != null ||
+    status?.quota_week_remaining != null;
+  const hasQuotaMonth = status?.quota_month_remaining != null && status?.quota_month_remaining !== undefined;
 
   // 通用余额展示
   const usagePercent = status?.balance_limit && status.balance_used
@@ -166,32 +187,35 @@ export function ProviderCard({ provider, onEdit }: Props) {
       {isCodingPlan ? (
         <div className="space-y-3 mb-3">
           {hasQuota5h && (
-            <QuotaRow 
-              label="⏱ 5小时额度" 
+            <QuotaRow
+              label={t('provider.quotaLabel5h')}
               remaining={status?.quota_5h_remaining}
               total={status?.quota_5h_total}
               used={status?.quota_5h_used}
+              remainingPercent={status?.quota_5h_remaining_percent}
             />
           )}
           {hasQuotaWeek && (
-            <QuotaRow 
-              label="📅 周额度" 
+            <QuotaRow
+              label={t('provider.quotaLabelWeek')}
               remaining={status?.quota_week_remaining}
               total={status?.quota_week_total}
               used={status?.quota_week_used}
+              remainingPercent={status?.quota_week_remaining_percent}
             />
           )}
           {hasQuotaMonth && (
-            <QuotaRow 
-              label="📆 月额度" 
+            <QuotaRow
+              label={t('provider.quotaLabelMonth')}
               remaining={status?.quota_month_remaining}
               total={status?.quota_month_total}
               used={status?.quota_month_used}
+              remainingPercent={null}
             />
           )}
           {!hasQuota5h && !hasQuotaWeek && !hasQuotaMonth && (
             <div className="text-center py-4 text-sm text-[var(--text-muted)]">
-              等待额度数据返回...
+              {t('provider.quotaWaiting')}
             </div>
           )}
         </div>
@@ -231,10 +255,10 @@ export function ProviderCard({ provider, onEdit }: Props) {
         </div>
         <div className="bg-[var(--bg-secondary)]/50 rounded-lg p-2">
           <div className="text-xs text-[var(--text-muted)]">
-            {isCodingPlan ? '总剩余' : t('provider.requestsToday')}
+            {isCodingPlan ? t('provider.quotaTotalRemaining') : t('provider.requestsToday')}
           </div>
           <div className="text-sm font-semibold text-[var(--text-primary)]">
-            {isCodingPlan 
+            {isCodingPlan
               ? Math.floor((status?.quota_5h_remaining || 0) + (status?.quota_week_remaining || 0))
               : (status?.requests_today ?? '--')}
           </div>
