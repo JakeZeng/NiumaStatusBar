@@ -961,7 +961,28 @@ jobs:
             -alias "$KEY_ALIAS" > /dev/null
           echo "Keystore OK"
 
-      - name: Build Android APK
+      - name: Copy frontend assets into Android project
+        run: |
+          set -e
+          # Tauri's `tauri android build` normally copies the frontend dist
+          # and tauri.conf.json into `app/src/main/assets/` before invoking
+          # Gradle. We bypass tauri-cli for the Gradle invocation, so we must
+          # stage these assets ourselves. Without them the Rust runtime can't
+          # find its config or the web assets and the Activity finishes
+          # immediately after launch (app "flashes" and closes).
+          ASSETS_DIR="src-tauri/gen/android/app/src/main/assets"
+          mkdir -p "$ASSETS_DIR/dist"
+          cp "src-tauri/tauri.conf.json" "$ASSETS_DIR/tauri.conf.json"
+          if [ -d "dist" ] && [ "$(ls -A dist)" ]; then
+            cp -r dist/. "$ASSETS_DIR/dist/"
+          else
+            echo "ERROR: dist/ directory is missing or empty. Run pnpm build first." >&2
+            exit 1
+          fi
+          echo "--- staged Android assets ---"
+          find "$ASSETS_DIR" -type f | sort
+
+      - name: Build Android APK"
         run: |
           set -e
           export ANDROID_HOME="$ANDROID_SDK_ROOT"
