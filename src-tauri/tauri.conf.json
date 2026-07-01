@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicovank/tauri/dev/crates/tauri-utils/schema.json",
   "productName": "NiumaStatusBar",
-  "version": "0.1.18",
+  "version": "0.1.20",
   "identifier": "com.aimonitor.app",
   "build": {
     "beforeDevCommand": "pnpm dev",
