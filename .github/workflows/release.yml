@@ -283,24 +283,27 @@ jobs:
           # overwrite or create a default proguard-rules.pro, so we write
           # the file explicitly after init. This is belt-and-braces with
           # the @get:Keep/@set:Keep annotations on MainActivity.id.
+          #
+          # IMPORTANT: do NOT use a `<<'EOF' ... EOF` heredoc here — GitHub's
+          # YAML parser trips on the `{` and `}` characters in the proguard
+          # block and reports a syntax error on the `<<'EOF'` line. Use
+          # sequential `printf >>` appends instead; the per-line strings
+          # are short and contain no YAML-meaningful metacharacters.
           PROGUARD_FILE=src-tauri/gen/android/app/proguard-rules.pro
-          cat > "$PROGUARD_FILE" <<'EOF'
-# WRY v0.55.1 JNI keep rules for AI Model Monitor.
-# R8 must keep MainActivity.getId()/setId(int) because WRY calls them
-# by name via JNI (GetMethodID only searches the receiver class).
--dontobfuscate
-
--keep class com.aimonitor.app.MainActivity {
-    int getId();
-    void setId(int);
-}
--keep class com.aimonitor.app.WryActivity {
-    int getId();
-    void setId(int);
-}
--keep class com.aimonitor.app.MainActivity { *; }
--keep class com.aimonitor.app.WryActivity { *; }
-EOF
+          : > "$PROGUARD_FILE"
+          printf '%s\n' \
+            '# WRY v0.55.1 JNI keep rules for AI Model Monitor.' \
+            '# R8 must keep MainActivity.getId()/setId(int) because WRY calls them' \
+            '# by name via JNI (GetMethodID only searches the receiver class).' \
+            '-dontobfuscate' \
+            '' \
+            '-keep class com.aimonitor.app.MainActivity' \
+            '-keep class com.aimonitor.app.MainActivity { int getId(); void setId(int); }' \
+            '-keep class com.aimonitor.app.WryActivity' \
+            '-keep class com.aimonitor.app.WryActivity { int getId(); void setId(int); }' \
+            '-keep class com.aimonitor.app.MainActivity { *; }' \
+            '-keep class com.aimonitor.app.WryActivity { *; }' \
+            >> "$PROGUARD_FILE"
           echo "--- $PROGUARD_FILE ---"
           cat "$PROGUARD_FILE"
 
