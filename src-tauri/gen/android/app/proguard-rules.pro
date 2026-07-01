@@ -58,15 +58,12 @@
 # `Call_method` to resolve the method ID) only walks the receiver
 # class's declared methods — it does NOT follow the vtable up to
 # WryActivity. MainActivity must therefore have a DECLARED
-# `getId()`/`setId(int)` of its own. The CI workflow makes this happen
-# in two steps:
+# `getId()`/`setId(int)` of its own. This is done in two steps:
 #
-#   1. BuildTask.kt (after cargo build) patches
-#      WryActivity's `var id: Int = 0` to `open var id: Int = 0` so
-#      it can be overridden.
-#   2. A separate step injects `override var id: Int = 0` into
-#      MainActivity.kt, so MainActivity's own method table contains
-#      `getId()` and `setId(int)`.
+#   1. MainActivity.kt declares `override var id: Int = 0` (with @Keep).
+#   2. BuildTask.kt (after cargo build) patches the generated
+#      WryActivity.kt so its `var id: Int = 0` becomes `open var id: Int = 0`,
+#      allowing MainActivity to override it.
 #
 # Then this file keeps those methods. Two rules are needed because
 # R8 can vertical-merge an override that only forwards to super

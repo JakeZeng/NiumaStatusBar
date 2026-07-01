@@ -39,7 +39,12 @@ open class BuildTask : DefaultTask() {
             environment("CARGO_TERM_COLOR", "always")
         }.assertNormalExitValue()
 
-        // 2. Copy the built .so into the Android project so the APK packager finds it
+        // 2. Patch WRY-generated WryActivity.kt: WRY 0.55.1 generates
+        //    `var id: Int = 0`, but MainActivity needs to override it.
+        //    Without `open` the Kotlin compiler rejects `override var id`.
+        patchWryActivityId(project.projectDir)
+
+        // 3. Copy the built .so into the Android project so the APK packager finds it
         val soName = "lib${rootDir.name}.so"
         val abi = when (target) {
             "aarch64-linux-android" -> "arm64-v8a"
@@ -67,5 +72,30 @@ open class BuildTask : DefaultTask() {
                 throw GradleException("Built .so not found at $srcSo or $fallbackSo")
             }
         }
+    }
+
+    private fun patchWryActivityId(appProjectDir: java.io.File) {
+        val candidates = listOf(
+            java.io.File(appProjectDir, "../.tauri/tauri-api/src/main/java/com/aimonitor/app/WryActivity.kt"),
+            java.io.File(appProjectDir, "src/main/java/com/aimonitor/app/WryActivity.kt")
+        )
+        for (wryActivity in candidates) {
+            if (!wryActivity.exists()) continue
+            val original = wryActivity.readText()
+            // WRY 0.55.1 template: `var id: Int = 0` inside abstract class WryActivity.
+            // Make it `open var id: Int = 0` so MainActivity can override it.
+            val patched = original.replace(
+                Regex("""(?<!\bopen\s)\bvar\s+id\s*:\s*Int\s*=\s*0"""),
+                "open var id: Int = 0"
+            )
+            if (original != patched) {
+                wryActivity.writeText(patched)
+                project.logger.lifecycle("Patched WryActivity.id to open: ${wryActivity.absolutePath}")
+            } else if (original.contains("open var id: Int = 0")) {
+                project.logger.lifecycle("WryActivity.id already open: ${wryActivity.absolutePath}")
+            }
+            return
+        }
+        project.logger.warn("WryActivity.kt not found in expected locations; skipped id patch")
     }
 }

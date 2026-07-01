@@ -524,6 +524,10 @@ jobs:
                           "Last 200 cargo log lines:\n${tail.joinToString("\n")}")
                   }
 
+                  // WRY 0.55.1 generates `var id: Int = 0`; MainActivity overrides it,
+                  // so the property must be `open`. Patch the generated source in-place.
+                  patchWryActivityId(project.projectDir)
+
                   // Copy the built .so into the Android project for APK packaging.
                   val cargoToml = File(cargoRoot, "Cargo.toml")
                   val soName = if (cargoToml.exists()) {
@@ -559,6 +563,29 @@ jobs:
                   val dstSo = File(dstDir, soName)
                   srcFinal.copyTo(dstSo, overwrite = true)
                   project.logger.lifecycle("Copied $srcFinal -> $dstSo")
+              }
+
+              private fun patchWryActivityId(appProjectDir: java.io.File) {
+                  val candidates = listOf(
+                      java.io.File(appProjectDir, "../.tauri/tauri-api/src/main/java/com/aimonitor/app/WryActivity.kt"),
+                      java.io.File(appProjectDir, "src/main/java/com/aimonitor/app/WryActivity.kt")
+                  )
+                  for (wryActivity in candidates) {
+                      if (!wryActivity.exists()) continue
+                      val original = wryActivity.readText()
+                      val patched = original.replace(
+                          Regex("""(?<!\bopen\s)\bvar\s+id\s*:\s*Int\s*=\s*0"""),
+                          "open var id: Int = 0"
+                      )
+                      if (original != patched) {
+                          wryActivity.writeText(patched)
+                          project.logger.lifecycle("Patched WryActivity.id to open: ${wryActivity.absolutePath}")
+                      } else if (original.contains("open var id: Int = 0")) {
+                          project.logger.lifecycle("WryActivity.id already open: ${wryActivity.absolutePath}")
+                      }
+                      return
+                  }
+                  project.logger.warn("WryActivity.kt not found in expected locations; skipped id patch")
               }
           }
           EOF
