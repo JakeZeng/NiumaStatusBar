@@ -658,7 +658,7 @@ jobs:
           # paths are relative to that directory. We `cd "$GITHUB_WORKSPACE"`
           # to compute the absolute vendor path first.
           cd "$GITHUB_WORKSPACE"
-          WRY_VENDOR="$GITHUB_WORKSPACE/src-tauri/gen/android/.tauri/wry-kotlin/com/aimonitor/app"
+          WRY_VENDOR="$GITHUB_WORKSPACE/src-tauri/patches/wry-kotlin/com/aimonitor/app"
           if [ -d "$WRY_VENDOR" ]; then
             mkdir -p "src-tauri/$API/src/main/java/com/aimonitor/app"
             for f in "$WRY_VENDOR"/*.kt; do
