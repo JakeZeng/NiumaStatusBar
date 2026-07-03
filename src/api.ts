@@ -52,6 +52,14 @@ export interface UsageStatus {
   quota_month_remaining: number | null;
   quota_month_total: number | null;
   quota_month_used: number | null;
+  /** 余额币种（ISO 4217）。未设置时前端按 provider 类型兜底 */
+  currency?: string | null;
+  /** 5h 窗口下次重置时间（unix 秒）。未设置时前端不显示重置提示 */
+  quota_5h_reset_at?: number | null;
+  /** 周窗口下次重置时间（unix 秒） */
+  quota_week_reset_at?: number | null;
+  /** 月窗口下次重置时间（unix 秒）。当前无 Provider 填充 */
+  quota_month_reset_at?: number | null;
 }
 
 // ===== 应用日志 =====

@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProviderConfig {
     pub id: String,
     pub name: String,
@@ -57,6 +58,23 @@ pub struct UsageStatus {
     pub quota_month_total: Option<f64>,
     /// 月窗口：已用
     pub quota_month_used: Option<f64>,
+
+    /// 余额币种（ISO 4217，如 "CNY" / "USD"）。后端解析器从响应中读取，
+    /// 前端按此决定展示符号。未设置时由前端按 provider 类型兜底。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub currency: Option<String>,
+
+    /// 5 小时窗口：下次重置时间（unix 秒）。MiniMax end_time 字段（毫秒）转换。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quota_5h_reset_at: Option<i64>,
+
+    /// 周窗口：下次重置时间（unix 秒）。MiniMax weekly_end_time 字段（毫秒）转换。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quota_week_reset_at: Option<i64>,
+
+    /// 月窗口：下次重置时间（unix 秒）。当前无 Provider 填充，预留给未来。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quota_month_reset_at: Option<i64>,
 }
 
 pub struct ProviderManager {
@@ -65,6 +83,9 @@ pub struct ProviderManager {
     statuses: RwLock<HashMap<String, UsageStatus>>,
     /// 可选的应用日志器；由 lib.rs setup 阶段通过 set_logger 注入
     logger: std::sync::Mutex<Option<Arc<AppLogger>>>,
+    /// Coding Plan 模型解析缓存：provider_id → model name
+    /// 启动首次拉取 / 出错时失效；避免每次轮询都请求 /models
+    coding_model_cache: RwLock<HashMap<String, String>>,
 }
 
 impl ProviderManager {
@@ -77,6 +98,7 @@ impl ProviderManager {
             providers: RwLock::new(Vec::new()),
             statuses: RwLock::new(HashMap::new()),
             logger: std::sync::Mutex::new(None),
+            coding_model_cache: RwLock::new(HashMap::new()),
         }
     }
 
@@ -203,19 +225,41 @@ impl ProviderManager {
         }
 
         if needs_body {
-            // 优先使用 provider.query_params 里的 model，否则用默认 model
-            let model = provider
+            // 选择 model：用户 query_params.model > 缓存的 Coding Plan 模型 > 默认
+            // Coding Plan 场景若缓存 miss，先异步拉 /models 解析第一个模型；
+            // 拉取失败或解析失败则 fallback 默认模型。
+            // 已知已失效的旧默认模型名——用户可能在升级前就持久化了这个值，
+            // 视为"未设置"，走动态模型解析。
+            const LEGACY_DEFAULT_MODEL: &str = "doubao-seed-code-1-0-260215";
+
+            let user_model = provider
                 .query_params
                 .get("model")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string())
+                .filter(|s| s != LEGACY_DEFAULT_MODEL)
                 .or_else(|| {
                     provider
                         .query_headers
                         .get("x-ark-model")
                         .cloned()
-                })
-                .unwrap_or_else(|| "doubao-seed-code-1-0-260215".to_string());
+                        .filter(|s| s != LEGACY_DEFAULT_MODEL)
+                });
+
+            let model = match user_model {
+                Some(m) => m,
+                None => {
+                    let use_resolver = provider.provider == "volcengine_coding"
+                        || provider.provider == "volcengine_token";
+                    if use_resolver {
+                        self.resolve_coding_model(provider, &log_helper)
+                            .await
+                            .unwrap_or_else(|| COPING_PLAN_DEFAULT_MODEL.to_string())
+                    } else {
+                        COPING_PLAN_DEFAULT_MODEL.to_string()
+                    }
+                }
+            };
 
             let minimal_body = serde_json::json!({
                 "model": model,
@@ -304,13 +348,74 @@ impl ProviderManager {
         // 1) Coding Plan（火山方舟）通过响应头返回
         parse_coding_plan_headers(&headers_map, &mut status);
 
+        // Debug：火山方舟解析后记录命中结果
+        if provider.provider == "volcengine_coding" || provider.provider == "volcengine_token" {
+            let ratelimit_keys: Vec<&String> = headers_map
+                .keys()
+                .filter(|k| k.contains("ratelimit") || k.contains("rate-limit"))
+                .collect();
+            log_helper(
+                LogLevel::Debug,
+                LogCategory::Provider,
+                "volcengine headers parsed",
+                Some(serde_json::json!({
+                    "ratelimit_keys": ratelimit_keys,
+                    "5h_total": status.quota_5h_total,
+                    "5h_remaining": status.quota_5h_remaining,
+                    "week_total": status.quota_week_total,
+                    "week_remaining": status.quota_week_remaining,
+                    "month_total": status.quota_month_total,
+                    "month_remaining": status.quota_month_remaining,
+                })),
+            );
+        }
+
         // 2) 通用 JSON 解析
         let parsed_json: Option<serde_json::Value> = serde_json::from_str(&body).ok();
         if let Some(ref json) = parsed_json {
             parse_generic_json(json, &mut status);
 
-            // 3) MiniMax Coding Plan / Token Plan
+            // 3) DeepSeek 开放平台 `/v1/user/balance`
+            if provider.provider == "deepseek" {
+                parse_deepseek_balance(json, &mut status);
+            }
+
+            // 4) MiniMax Coding Plan / Token Plan
             if provider.provider == "minimax_coding" || provider.provider == "minimax_token" {
+                // 探查 model_remains[0] 的所有字段名+类型（仅 Debug 级别），用于发现 reset 字段。
+                if let Some(first) = parsed_json
+                    .as_ref()
+                    .and_then(|j| j.get("model_remains").or(j.get("data")))
+                    .and_then(|v| v.as_array())
+                    .and_then(|a| a.first())
+                {
+                    let field_summary: Vec<String> = first
+                        .as_object()
+                        .map(|m| {
+                            m.iter()
+                                .map(|(k, v)| {
+                                    let val_preview = match v {
+                                        serde_json::Value::String(s) => {
+                                            format!("str(\"{}\")", s.chars().take(50).collect::<String>())
+                                        }
+                                        serde_json::Value::Number(n) => format!("num({})", n),
+                                        serde_json::Value::Bool(b) => format!("bool({})", b),
+                                        serde_json::Value::Null => "null".to_string(),
+                                        serde_json::Value::Array(_) => "array".to_string(),
+                                        serde_json::Value::Object(_) => "object".to_string(),
+                                    };
+                                    format!("{}: {}", k, val_preview)
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    log_helper(
+                        LogLevel::Debug,
+                        LogCategory::Provider,
+                        "minimax model_remains[0] field dump",
+                        Some(serde_json::json!({ "fields": field_summary })),
+                    );
+                }
                 let hits = parse_minimax_remains(json, &mut status);
                 log_helper(
                     LogLevel::Debug,
@@ -337,6 +442,28 @@ impl ProviderManager {
         // 4) 错误处理：HTTP 错误码 → 显式错误，让前端能看到原因而不是静默"等待数据"
         if status_code >= 400 {
             let body_excerpt = truncate(&body, 300);
+            // Coding Plan 场景下，如果是模型不存在/未授权等错误，清模型缓存让下次轮询重拉
+            let is_volc = provider.provider == "volcengine_coding"
+                || provider.provider == "volcengine_token";
+            let body_lower = body.to_lowercase();
+            let likely_bad_model = is_volc && (
+                body_lower.contains("model") &&
+                    (body_lower.contains("not found")
+                     || body_lower.contains("not exist")
+                     || body_lower.contains("invalid")
+                     || body_lower.contains("unavailable"))
+            );
+            if likely_bad_model {
+                self.invalidate_coding_model_cache(&provider.id).await;
+                log_helper(
+                    LogLevel::Warn,
+                    LogCategory::Http,
+                    "coding model likely invalid, cache cleared (will re-resolve next tick)",
+                    Some(serde_json::json!({
+                        "body_excerpt": body_excerpt,
+                    })),
+                );
+            }
             log_helper(
                 LogLevel::Error,
                 LogCategory::Http,
@@ -415,24 +542,63 @@ impl ProviderManager {
             }
         }
 
-        // 6) 火山方舟 Coding Plan：POST 成功但没拿到额度头时，显式说明
+        // 6) DeepSeek 业务错误：HTTP 200 但 is_available=false / balance_infos 缺失
+        if provider.provider == "deepseek" && status.balance.is_none() {
+            let is_available = parsed_json
+                .as_ref()
+                .and_then(|j| j.get("is_available"))
+                .and_then(|v| v.as_bool());
+            log_helper(
+                LogLevel::Warn,
+                LogCategory::Provider,
+                "deepseek missing balance",
+                Some(serde_json::json!({
+                    "is_available": is_available,
+                    "raw_excerpt": truncate(&body, 200),
+                })),
+            );
+            let reason = match is_available {
+                Some(false) => "is_available=false，账户可能被冻结或余额为 0".to_string(),
+                _ => "响应未包含 balance_infos 或 balance 字段".to_string(),
+            };
+            return Err(format!(
+                "DeepSeek 余额解析失败：{}。原始响应：{}",
+                reason,
+                truncate(&body, 300)
+            ));
+        }
+
+        // 7) 火山方舟 Coding Plan：POST 成功但没拿到任何额度头时，显式说明
         if (provider.provider == "volcengine_coding" || provider.provider == "volcengine_token")
-            && status.quota_5h_remaining.is_none()
-            && status.quota_week_remaining.is_none()
-            && status.quota_month_remaining.is_none()
+            && status.quota_5h_total.is_none()
+            && status.quota_week_total.is_none()
+            && status.quota_month_total.is_none()
         {
+            // 筛选真正的 ratelimit 相关头（避免 x-request-id 等无关头）
+            let ratelimit_headers: Vec<String> = headers_map
+                .iter()
+                .filter(|(k, _)| {
+                    let kl = k.to_lowercase();
+                    kl.contains("ratelimit") || kl.contains("rate-limit") || kl.contains("x-ark-")
+                })
+                .map(|(k, v)| format!("{}={}", k, truncate(v, 80)))
+                .collect();
             log_helper(
                 LogLevel::Warn,
                 LogCategory::Provider,
                 "volcengine missing rate-limit headers",
                 Some(serde_json::json!({
-                    "headers": headers_map.keys().collect::<Vec<_>>(),
+                    "status_code": status_code,
+                    "url": strip_url_query(&url),
+                    "ratelimit_headers": ratelimit_headers,
+                    "all_header_keys": headers_map.keys().collect::<Vec<_>>(),
+                    "body_excerpt": truncate(&body, 500),
                 })),
             );
             return Err(format!(
-                "火山方舟未返回 X-RateLimit-* 响应头。请确认 API Key 已开通 Coding Plan / Token Plan 套餐。响应头：{:?}，body：{}",
-                headers_map.keys().collect::<Vec<_>>(),
-                truncate(&body, 200)
+                "火山方舟未返回 X-RateLimit-Limit-* 响应头（HTTP {}）。请确认 API Key 已开通 Coding Plan / Token Plan 套餐且模型端点正确。响应 body：{}",
+                status_code,
+                truncate(&body, 300)
             ));
         }
 
@@ -444,30 +610,74 @@ impl ProviderManager {
 /// 字段: X-RateLimit-Remaining-5H, X-RateLimit-Limit-5H
 ///       X-RateLimit-Remaining-Week, X-RateLimit-Limit-Week
 ///       X-RateLimit-Remaining-Month, X-RateLimit-Limit-Month
+/// 注意：limit 与 remaining 独立读取——某些场景下可能只返回 limit 而无 remaining
+/// （如刚开通、尚未产生调用），此时用户仍可看到总量。
 fn parse_coding_plan_headers(headers: &HashMap<String, String>, status: &mut UsageStatus) {
     let get = |k: &str| headers.get(k).and_then(|v| v.parse::<f64>().ok());
 
     if let Some(remaining) = get("x-ratelimit-remaining-5h") {
-        status.quota_5h_remaining = Some(remaining);
-        if let Some(total) = get("x-ratelimit-limit-5h") {
+        if status.quota_5h_remaining.is_none() {
+            status.quota_5h_remaining = Some(remaining);
+        }
+    }
+    if let Some(total) = get("x-ratelimit-limit-5h") {
+        if status.quota_5h_total.is_none() {
             status.quota_5h_total = Some(total);
-            status.quota_5h_used = Some((total - remaining).max(0.0));
+        }
+    }
+    // remaining 与 total 都齐时推算 used
+    if status.quota_5h_used.is_none() {
+        if let (Some(t), Some(r)) = (status.quota_5h_total, status.quota_5h_remaining) {
+            status.quota_5h_used = Some((t - r).max(0.0));
         }
     }
 
     if let Some(remaining) = get("x-ratelimit-remaining-week") {
-        status.quota_week_remaining = Some(remaining);
-        if let Some(total) = get("x-ratelimit-limit-week") {
+        if status.quota_week_remaining.is_none() {
+            status.quota_week_remaining = Some(remaining);
+        }
+    }
+    if let Some(total) = get("x-ratelimit-limit-week") {
+        if status.quota_week_total.is_none() {
             status.quota_week_total = Some(total);
-            status.quota_week_used = Some((total - remaining).max(0.0));
+        }
+    }
+    if status.quota_week_used.is_none() {
+        if let (Some(t), Some(r)) = (status.quota_week_total, status.quota_week_remaining) {
+            status.quota_week_used = Some((t - r).max(0.0));
         }
     }
 
     if let Some(remaining) = get("x-ratelimit-remaining-month") {
-        status.quota_month_remaining = Some(remaining);
-        if let Some(total) = get("x-ratelimit-limit-month") {
+        if status.quota_month_remaining.is_none() {
+            status.quota_month_remaining = Some(remaining);
+        }
+    }
+    if let Some(total) = get("x-ratelimit-limit-month") {
+        if status.quota_month_total.is_none() {
             status.quota_month_total = Some(total);
-            status.quota_month_used = Some((total - remaining).max(0.0));
+        }
+    }
+    if status.quota_month_used.is_none() {
+        if let (Some(t), Some(r)) = (status.quota_month_total, status.quota_month_remaining) {
+            status.quota_month_used = Some((t - r).max(0.0));
+        }
+    }
+
+    // 同时解析 reset 时间头（X-RateLimit-Reset-5H/Week/Month，通常是 unix 秒）
+    if status.quota_5h_reset_at.is_none() {
+        if let Some(ts) = get("x-ratelimit-reset-5h").map(|v| v as i64) {
+            status.quota_5h_reset_at = Some(ts);
+        }
+    }
+    if status.quota_week_reset_at.is_none() {
+        if let Some(ts) = get("x-ratelimit-reset-week").map(|v| v as i64) {
+            status.quota_week_reset_at = Some(ts);
+        }
+    }
+    if status.quota_month_reset_at.is_none() {
+        if let Some(ts) = get("x-ratelimit-reset-month").map(|v| v as i64) {
+            status.quota_month_reset_at = Some(ts);
         }
     }
 }
@@ -500,6 +710,62 @@ fn parse_generic_json(json: &serde_json::Value, status: &mut UsageStatus) {
             .get("requests_today")
             .or(json.get("total_requests"))
             .and_then(|v| v.as_i64());
+    }
+}
+
+/// DeepSeek 开放平台 `/v1/user/balance` 专用解析
+///
+/// 响应示例：
+/// {
+///   "is_available": true,
+///   "balance_infos": [{
+///     "currency": "CNY",
+///     "total_balance": "7.64",
+///     "granted_balance": "0.00",
+///     "topped_up_balance": "7.64"
+///   }]
+/// }
+/// 数值字段在 JSON 中是字符串。`granted_balance + topped_up_balance` 视为账户总额度
+/// （balance_limit），`granted + topped - total_balance` 视为已用（balance_used）。
+fn parse_deepseek_balance(json: &serde_json::Value, status: &mut UsageStatus) {
+    let infos = match json.get("balance_infos").and_then(|v| v.as_array()) {
+        Some(arr) => arr,
+        None => return,
+    };
+    let first = match infos.first() {
+        Some(v) => v,
+        None => return,
+    };
+
+    fn num(v: &serde_json::Value) -> Option<f64> {
+        match v {
+            serde_json::Value::String(s) => s.parse::<f64>().ok(),
+            serde_json::Value::Number(n) => n.as_f64(),
+            _ => None,
+        }
+    }
+
+    if status.balance.is_none() {
+        status.balance = first.get("total_balance").and_then(num);
+    }
+    if status.currency.is_none() {
+        status.currency = first
+            .get("currency")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+    }
+    let granted = first.get("granted_balance").and_then(num);
+    let topped_up = first.get("topped_up_balance").and_then(num);
+
+    if status.balance_limit.is_none() {
+        if let (Some(g), Some(t)) = (granted, topped_up) {
+            status.balance_limit = Some(g + t);
+        }
+    }
+    if status.balance_used.is_none() {
+        if let (Some(g), Some(t), Some(b)) = (granted, topped_up, status.balance) {
+            status.balance_used = Some((g + t - b).max(0.0));
+        }
     }
 }
 
@@ -569,6 +835,17 @@ fn parse_minimax_remains(json: &serde_json::Value, status: &mut UsageStatus) -> 
             status.quota_5h_remaining = Some((t - u).max(0.0));
         }
     }
+    if status.quota_5h_reset_at.is_none() {
+        if let Some(ms) = first
+            .get("end_time")
+            .or(first.get("current_interval_end"))
+            .or(first.get("interval_end"))
+            .and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64)))
+        {
+            status.quota_5h_reset_at = Some(ms / 1000);
+            hits.push("5h:reset_at:end_time");
+        }
+    }
 
     // ===== 周窗口 =====
     if status.quota_week_remaining_percent.is_none() {
@@ -607,6 +884,18 @@ fn parse_minimax_remains(json: &serde_json::Value, status: &mut UsageStatus) -> 
             status.quota_week_remaining = Some((t - u).max(0.0));
         }
     }
+    if status.quota_week_reset_at.is_none() {
+        if let Some(ms) = first
+            .get("weekly_end_time")
+            .or(first.get("current_weekly_end"))
+            .or(first.get("weekly_end"))
+            .or(first.get("week_end"))
+            .and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64)))
+        {
+            status.quota_week_reset_at = Some(ms / 1000);
+            hits.push("week:reset_at:weekly_end_time");
+        }
+    }
 
     hits
 }
@@ -626,5 +915,123 @@ fn strip_url_query(url: &str) -> &str {
     match url.find('?') {
         Some(idx) => &url[..idx],
         None => url,
+    }
+}
+
+/// Coding Plan 模型解析：先查缓存，miss 时发 GET /api/coding/v3/models 拉模型列表取第一个 id。
+/// 返回 None 表示请求失败 / 解析失败，调用方应 fallback 到默认模型。
+///
+/// 火山方舟 Coding Plan /models 响应结构（推测，失败时 fallback 默认模型即可）：
+/// { "data": [{ "id": "doubao-seed-code-xxx", ... }, ...] }
+const COPING_PLAN_DEFAULT_MODEL: &str = "ark-code-latest";
+
+impl ProviderManager {
+    pub async fn resolve_coding_model(
+        &self,
+        provider: &ProviderConfig,
+        log_helper: &impl Fn(LogLevel, LogCategory, &str, Option<serde_json::Value>),
+    ) -> Option<String> {
+        // 1) 查缓存
+        {
+            let cache = self.coding_model_cache.read().await;
+            if let Some(m) = cache.get(&provider.id) {
+                return Some(m.clone());
+            }
+        }
+
+        // 2) GET /api/coding/v3/models（与 chat/completions 同 host，base_url 已带 /api/coding/v3）
+        //    base_url 规范："https://ark.cn-beijing.volces.com/api/coding/v3"
+        //    我们追加 /models
+        let url = format!(
+            "{}/models",
+            provider.base_url.trim_end_matches('/')
+        );
+        let mut req = self.client.get(&url)
+            .header("Authorization", format!("Bearer {}", provider.api_key));
+        for (k, v) in &provider.query_headers {
+            if k.eq_ignore_ascii_case("content-type") { continue; }
+            req = req.header(k, v);
+        }
+
+        log_helper(
+            LogLevel::Debug,
+            LogCategory::Http,
+            "coding models fetch start",
+            Some(serde_json::json!({ "url": strip_url_query(&url) })),
+        );
+
+        let start = std::time::Instant::now();
+        let resp = match req.send().await {
+            Ok(r) => r,
+            Err(e) => {
+                log_helper(
+                    LogLevel::Warn,
+                    LogCategory::Http,
+                    "coding models fetch failed",
+                    Some(serde_json::json!({ "error": e.to_string() })),
+                );
+                return None;
+            }
+        };
+        let latency = start.elapsed().as_millis() as i64;
+        let status = resp.status().as_u16();
+        let body = resp.text().await.unwrap_or_default();
+
+        if status >= 400 {
+            log_helper(
+                LogLevel::Warn,
+                LogCategory::Http,
+                "coding models http error",
+                Some(serde_json::json!({
+                    "status": status,
+                    "latency_ms": latency,
+                    "body": truncate(&body, 200),
+                })),
+            );
+            return None;
+        }
+
+        // 3) 解析 JSON：data[0].id 优先，也兼容 { "models": [...], "data": [...] }
+        let model = serde_json::from_str::<serde_json::Value>(&body).ok().and_then(|j| {
+            let arr = j.get("data").and_then(|v| v.as_array())
+                .or_else(|| j.get("models").and_then(|v| v.as_array()))?;
+            arr.first()?.get("id")?.as_str().map(|s| s.to_string())
+        });
+
+        match &model {
+            Some(m) => {
+                log_helper(
+                    LogLevel::Info,
+                    LogCategory::Http,
+                    "coding models resolved",
+                    Some(serde_json::json!({
+                        "model": m,
+                        "latency_ms": latency,
+                    })),
+                );
+                // 写缓存
+                let mut cache = self.coding_model_cache.write().await;
+                cache.insert(provider.id.clone(), m.clone());
+            }
+            None => {
+                log_helper(
+                    LogLevel::Warn,
+                    LogCategory::Http,
+                    "coding models parse failed",
+                    Some(serde_json::json!({
+                        "body_excerpt": truncate(&body, 300),
+                    })),
+                );
+            }
+        }
+        model
+    }
+
+    /// 清除 coding model 缓存（chat/completions 返回 model 相关错误时调用，下次重新解析）
+    pub async fn invalidate_coding_model_cache(&self, provider_id: &str) {
+        let mut cache = self.coding_model_cache.write().await;
+        if cache.remove(provider_id).is_some() {
+            // 日志在调用方打
+        }
     }
 }

@@ -23,7 +23,7 @@ const PROVIDER_PRESETS = [
     type: 'deepseek',
     name: 'DeepSeek',
     baseUrl: 'https://api.deepseek.com',
-    endpoint: '/v1/user/usage',
+    endpoint: '/v1/user/balance',
     method: 'GET',
   },
   {
@@ -97,7 +97,7 @@ export function ConfigModal({ isOpen, provider, onClose, onSave }: Props) {
           'x-ark-customer': 'monitor-usage',
         };
         // 默认模型；用户可在下方"Model"输入框修改
-        newForm.queryParams = { model: 'doubao-seed-code-1-0-260215' };
+        newForm.queryParams = { model: 'ark-code-latest' };
       } else {
         newForm.queryHeaders = { 'Content-Type': 'application/json' };
         newForm.queryParams = {};
@@ -211,7 +211,7 @@ export function ConfigModal({ isOpen, provider, onClose, onSave }: Props) {
               <label className="block text-sm font-medium mb-1 text-[var(--text-secondary)]">
                 Model
                 <span className="ml-2 text-xs text-[var(--text-muted)]">
-                  留空使用默认 doubao-seed-code-1-0-260215
+                  留空使用默认 ark-code-latest
                 </span>
               </label>
               <input
@@ -221,7 +221,7 @@ export function ConfigModal({ isOpen, provider, onClose, onSave }: Props) {
                   ...f,
                   queryParams: { ...(f.queryParams || {}), model: e.target.value }
                 }))}
-                placeholder="doubao-seed-code-1-0-260215"
+                placeholder="ark-code-latest"
                 className="w-full px-3 py-2 rounded-lg border border-[var(--border-color)] 
                          bg-[var(--bg-secondary)] text-[var(--text-primary)]
                          placeholder:text-[var(--text-muted)]"

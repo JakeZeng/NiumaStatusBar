@@ -56,9 +56,31 @@ impl Poller {
         }
 
         let providers = self.manager.get_providers().await;
+        if let Some(l) = self.logger_ref() {
+            l.log(
+                LogLevel::Info,
+                LogCategory::Poller,
+                Some("poller.start_all".into()),
+                "start_all enumerating providers",
+                Some(serde_json::json!({
+                    "total": providers.len(),
+                    "enabled": providers.iter().filter(|p| p.is_enabled).count(),
+                    "disabled": providers.iter().filter(|p| !p.is_enabled).count(),
+                    "ids": providers.iter().map(|p| format!("{}:enabled={}", p.id, p.is_enabled)).collect::<Vec<_>>(),
+                })),
+            );
+        }
         for provider in providers {
             if provider.is_enabled {
                 self.spawn_poll(provider);
+            } else if let Some(l) = self.logger_ref() {
+                l.log(
+                    LogLevel::Info,
+                    LogCategory::Poller,
+                    Some(provider.id.clone()),
+                    "start_all skip disabled",
+                    Some(serde_json::json!({ "name": provider.name, "provider": provider.provider })),
+                );
             }
         }
     }

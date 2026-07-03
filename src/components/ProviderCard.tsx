@@ -2,12 +2,15 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CheckCircle, XCircle, RefreshCw, Settings } from 'lucide-react';
+import { CheckCircle, XCircle, RefreshCw, Settings, Trash2 } from 'lucide-react';
 import type { ProviderConfig, UsageStatus } from '../api';
+import { getCurrencySymbol } from '../lib/currency';
+import { formatRelativeReset } from '../lib/format';
 
 interface Props {
   provider: ProviderConfig;
   onEdit: (p: ProviderConfig) => void;
+  onDelete?: (p: ProviderConfig) => void;
 }
 
 interface QuotaRowProps {
@@ -16,9 +19,10 @@ interface QuotaRowProps {
   total: number | null | undefined;
   used: number | null | undefined;
   remainingPercent?: number | null;
+  resetAt?: number | null;
 }
 
-function QuotaRow({ label, remaining, total, used, remainingPercent }: QuotaRowProps) {
+function QuotaRow({ label, remaining, total, used, remainingPercent, resetAt }: QuotaRowProps) {
   const hasPercent = remainingPercent != null;
   const hasTotalUsed =
     total != null && total !== undefined && total > 0 &&
@@ -26,7 +30,11 @@ function QuotaRow({ label, remaining, total, used, remainingPercent }: QuotaRowP
   const hasRemaining =
     !hasPercent && !hasTotalUsed &&
     remaining != null && remaining !== undefined;
-  const hasData = hasPercent || hasTotalUsed || hasRemaining;
+  // 只有 total、没有 remaining/used/percent（比如火山方舟刚开通、未产生调用时仅返回 limit 头）
+  const hasTotalOnly =
+    !hasPercent && !hasTotalUsed && !hasRemaining &&
+    total != null && total !== undefined && total > 0;
+  const hasData = hasPercent || hasTotalUsed || hasRemaining || hasTotalOnly;
 
   const percent = hasPercent
     ? remainingPercent!
@@ -34,7 +42,11 @@ function QuotaRow({ label, remaining, total, used, remainingPercent }: QuotaRowP
       ? (used! / total!) * 100
       : hasRemaining
         ? Math.min(remaining!, 100)
-        : 0;
+        : hasTotalOnly
+          ? 0
+          : 0;
+
+  const resetText = resetAt ? formatRelativeReset(resetAt) : '';
 
   return (
     <div className="space-y-1">
@@ -44,6 +56,11 @@ function QuotaRow({ label, remaining, total, used, remainingPercent }: QuotaRowP
           {hasData ? (
             hasPercent ? (
               <span className="text-[var(--color-primary)]">{remainingPercent!.toFixed(0)}%</span>
+            ) : hasTotalOnly ? (
+              <>
+                <span className="text-[var(--text-muted)]">总量 </span>
+                <span className="text-[var(--color-primary)]">{Math.floor(total!)}</span>
+              </>
             ) : (
               <>
                 <span className="text-[var(--color-primary)]">{Math.floor(remaining ?? 0)}</span>
@@ -63,11 +80,16 @@ function QuotaRow({ label, remaining, total, used, remainingPercent }: QuotaRowP
           />
         )}
       </div>
+      {resetText && (
+        <div className="text-[10px] text-[var(--text-muted)] text-right">
+          {resetText}
+        </div>
+      )}
     </div>
   );
 }
 
-export function ProviderCard({ provider, onEdit }: Props) {
+export function ProviderCard({ provider, onEdit, onDelete }: Props) {
   const { t } = useTranslation();
   const [status, setStatus] = useState<UsageStatus | null>(null);
   const [loading, setLoading] = useState(false);
@@ -140,11 +162,20 @@ export function ProviderCard({ provider, onEdit }: Props) {
     : 0;
 
   return (
-    <div className="relative overflow-hidden rounded-xl p-3 sm:p-4 lg:p-5
-                    bg-[var(--bg-card)] border border-[var(--border-color)]
-                    shadow-[var(--shadow-card)]
-                    hover:shadow-[var(--glow-primary)] transition-all duration-300
-                    backdrop-blur-md">
+    <div className={`relative overflow-hidden rounded-xl p-3 sm:p-4 lg:p-5
+                    bg-[var(--bg-card)] border transition-all duration-300
+                    backdrop-blur-md
+                    ${provider.isEnabled
+                      ? 'border-[var(--border-color)] shadow-[var(--shadow-card)] hover:shadow-[var(--glow-primary)]'
+                      : 'border-[var(--border-color)]/40 opacity-60 grayscale'}`}>
+
+      {!provider.isEnabled && (
+        <div className="absolute top-2 right-2 px-2 py-0.5 text-[10px] sm:text-xs
+                        rounded-full bg-[var(--bg-overlay)] text-[var(--text-muted)]
+                        border border-[var(--border-color)] z-10">
+          已禁用
+        </div>
+      )}
 
       <div className="absolute top-0 right-0 w-12 h-12 sm:w-16 sm:h-16
                       bg-gradient-to-bl from-[var(--color-primary)]/20 to-transparent
@@ -173,13 +204,25 @@ export function ProviderCard({ provider, onEdit }: Props) {
           </button>
           <button
             onClick={() => onEdit(provider)}
-            className="p-2 rounded-lg hover:bg-[var(--bg-overlay)] 
+            className="p-2 rounded-lg hover:bg-[var(--bg-overlay)]
                        text-[var(--text-secondary)] hover:text-[var(--color-primary)]
                        transition-colors"
             title="编辑"
           >
             <Settings className="w-4 h-4" />
           </button>
+          {onDelete && (
+            <button
+              onClick={() => onDelete(provider)}
+              className="p-2 rounded-lg hover:bg-[var(--bg-overlay)]
+                         text-[var(--text-secondary)] hover:text-[var(--color-danger)]
+                         transition-colors"
+              title={t('provider.delete')}
+              aria-label={t('provider.delete')}
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -193,6 +236,7 @@ export function ProviderCard({ provider, onEdit }: Props) {
               total={status?.quota_5h_total}
               used={status?.quota_5h_used}
               remainingPercent={status?.quota_5h_remaining_percent}
+              resetAt={status?.quota_5h_reset_at}
             />
           )}
           {hasQuotaWeek && (
@@ -202,6 +246,7 @@ export function ProviderCard({ provider, onEdit }: Props) {
               total={status?.quota_week_total}
               used={status?.quota_week_used}
               remainingPercent={status?.quota_week_remaining_percent}
+              resetAt={status?.quota_week_reset_at}
             />
           )}
           {hasQuotaMonth && (
@@ -211,6 +256,7 @@ export function ProviderCard({ provider, onEdit }: Props) {
               total={status?.quota_month_total}
               used={status?.quota_month_used}
               remainingPercent={null}
+              resetAt={status?.quota_month_reset_at}
             />
           )}
           {!hasQuota5h && !hasQuotaWeek && !hasQuotaMonth && (
@@ -224,10 +270,10 @@ export function ProviderCard({ provider, onEdit }: Props) {
         <div className="mb-4">
           <div className="flex items-baseline justify-between mb-2">
             <span className="text-sm text-[var(--text-secondary)]">{t('provider.balance')}</span>
-            <span className="text-2xl font-bold text-[var(--color-primary)] 
+            <span className="text-2xl font-bold text-[var(--color-primary)]
                             drop-shadow-[var(--glow-primary)]">
               {status?.balance !== null && status?.balance !== undefined
-                ? `$${status.balance.toFixed(2)}`
+                ? `${getCurrencySymbol(status.currency, provider.provider)}${status.balance.toFixed(2)}`
                 : '--'}
             </span>
           </div>

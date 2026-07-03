@@ -145,14 +145,33 @@ fn format_tooltip(provider: &ProviderConfig, status: Option<&UsageStatus>) -> St
         lines.push(format!("余额 {:.2}", bal));
     }
 
-    if let (Some(used), Some(total)) = (s.quota_5h_used, s.quota_5h_total) {
+    if let Some(p) = s.quota_5h_remaining_percent {
+        lines.push(format!("5h 剩余 {}%", p.round() as i64));
+    } else if let (Some(used), Some(total)) = (s.quota_5h_used, s.quota_5h_total) {
         lines.push(format!("5h {} / {}", used as i64, total as i64));
     }
-    if let (Some(used), Some(total)) = (s.quota_week_used, s.quota_week_total) {
+    if let Some(ts) = s.quota_5h_reset_at {
+        if let Some(text) = format_relative_reset(ts) {
+            lines.push(format!("  ↻ {}", text));
+        }
+    }
+    if let Some(p) = s.quota_week_remaining_percent {
+        lines.push(format!("周剩余 {}%", p.round() as i64));
+    } else if let (Some(used), Some(total)) = (s.quota_week_used, s.quota_week_total) {
         lines.push(format!("周 {} / {}", used as i64, total as i64));
+    }
+    if let Some(ts) = s.quota_week_reset_at {
+        if let Some(text) = format_relative_reset(ts) {
+            lines.push(format!("  ↻ {}", text));
+        }
     }
     if let (Some(used), Some(total)) = (s.quota_month_used, s.quota_month_total) {
         lines.push(format!("月 {} / {}", used as i64, total as i64));
+    }
+    if let Some(ts) = s.quota_month_reset_at {
+        if let Some(text) = format_relative_reset(ts) {
+            lines.push(format!("  ↻ {}", text));
+        }
     }
 
     if lines.len() == 1 {
@@ -168,5 +187,35 @@ fn truncate(s: &str, max: usize) -> String {
         t
     } else {
         s.to_string()
+    }
+}
+
+/// 把 unix 秒重置时间格式化为 "Xh Ym 后重置" / "Xm 后重置" / "已重置"。
+/// 已过期或距今 ≤ 60 秒返回 None，由调用方决定是否展示。
+fn format_relative_reset(reset_at_unix_sec: i64) -> Option<String> {
+    let now = chrono::Utc::now().timestamp();
+    let diff = reset_at_unix_sec - now;
+    if diff <= 60 {
+        return None;
+    }
+
+    let days = diff / 86400;
+    let hours = (diff % 86400) / 3600;
+    let minutes = (diff % 3600) / 60;
+
+    if days > 0 {
+        Some(if hours > 0 {
+            format!("{}d{}h 后重置", days, hours)
+        } else {
+            format!("{}d 后重置", days)
+        })
+    } else if hours > 0 {
+        Some(if minutes > 0 {
+            format!("{}h{}m 后重置", hours, minutes)
+        } else {
+            format!("{}h 后重置", hours)
+        })
+    } else {
+        Some(format!("{}m 后重置", minutes))
     }
 }

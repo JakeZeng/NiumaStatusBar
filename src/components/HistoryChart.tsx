@@ -1,13 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
-import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts';
+import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart, Line } from 'recharts';
 import { TrendingUp, Clock, ChevronDown } from 'lucide-react';
 import type { UsageStatus } from '../api';
+import { getCurrencySymbol } from '../lib/currency';
 
 interface Props {
   providerId: string;
   providerName: string;
+  providerType?: string;
 }
 
 type TimeRange = '1h' | '6h' | '24h' | '7d';
@@ -19,7 +21,7 @@ const TIME_RANGES: { key: TimeRange; labelKey: string; seconds: number }[] = [
   { key: '7d', labelKey: 'chart.range7d', seconds: 604800 },
 ];
 
-export function HistoryChart({ providerId, providerName }: Props) {
+export function HistoryChart({ providerId, providerName, providerType }: Props) {
   const { t } = useTranslation();
   const [data, setData] = useState<UsageStatus[]>([]);
   const [range, setRange] = useState<TimeRange>('24h');
@@ -54,7 +56,20 @@ export function HistoryChart({ providerId, providerName }: Props) {
            ' ' + d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
   };
 
-  const formatBalance = (value: number) => `$${value.toFixed(2)}`;
+  const formatBalance = (value: number) => {
+    // 历史数据不带 currency 字段——统一按 providerType 兜底
+    const symbol = getCurrencySymbol(undefined, providerType);
+    return `${symbol}${value.toFixed(2)}`;
+  };
+  const formatPercent = (value: number) => `${value.toFixed(0)}%`;
+
+  // 数据中只要出现过 quota_*_percent 字段，就启用百分比右轴（覆盖多个 Provider 时用首次出现判断）
+  const hasQuotaPercent = useMemo(
+    () => data.some(
+      d => d.quota_5h_remaining_percent != null || d.quota_week_remaining_percent != null
+    ),
+    [data]
+  );
 
   const currentRange = TIME_RANGES.find(r => r.key === range)!;
 
@@ -119,19 +134,20 @@ export function HistoryChart({ providerId, providerName }: Props) {
                   <stop offset="95%" stopColor="var(--color-primary)" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid 
-                strokeDasharray="3 3" 
-                stroke="var(--border-color)" 
-                opacity={0.3} 
+              <CartesianGrid
+                strokeDasharray="3 3"
+                stroke="var(--border-color)"
+                opacity={0.3}
               />
-              <XAxis 
-                dataKey="timestamp" 
+              <XAxis
+                dataKey="timestamp"
                 tickFormatter={formatTime}
                 stroke="var(--text-muted)"
                 fontSize={11}
                 tickLine={false}
               />
-              <YAxis 
+              <YAxis
+                yAxisId="balance"
                 tickFormatter={formatBalance}
                 stroke="var(--text-muted)"
                 fontSize={11}
@@ -139,6 +155,19 @@ export function HistoryChart({ providerId, providerName }: Props) {
                 axisLine={false}
                 width={70}
               />
+              {hasQuotaPercent && (
+                <YAxis
+                  yAxisId="percent"
+                  orientation="right"
+                  domain={[0, 100]}
+                  tickFormatter={formatPercent}
+                  stroke="var(--text-muted)"
+                  fontSize={11}
+                  tickLine={false}
+                  axisLine={false}
+                  width={40}
+                />
+              )}
               <Tooltip
                 contentStyle={{
                   backgroundColor: 'var(--bg-card)',
@@ -147,16 +176,50 @@ export function HistoryChart({ providerId, providerName }: Props) {
                   color: 'var(--text-primary)',
                 }}
                 labelFormatter={(ts) => formatTime(ts as number)}
-                formatter={(value: unknown) => [`$${(value as number).toFixed(4)}`, '余额']}
+                formatter={(value, name) => {
+                  const v = value as number;
+                  const n = String(name);
+                  if (typeof v !== 'number') return ['--', n];
+                  if (n.includes('%')) return [`${v.toFixed(1)}%`, n];
+                  const symbol = getCurrencySymbol(undefined, providerType);
+                  return [`${symbol}${v.toFixed(4)}`, n];
+                }}
               />
-              <Area 
-                type="monotone" 
-                dataKey="balance" 
-                stroke="var(--color-primary)" 
+              <Area
+                yAxisId="balance"
+                type="monotone"
+                dataKey="balance"
+                stroke="var(--color-primary)"
                 fill="url(#balanceGradient)"
                 strokeWidth={2}
                 dot={false}
+                name="余额"
+                connectNulls
               />
+              {hasQuotaPercent && (
+                <Line
+                  yAxisId="percent"
+                  type="monotone"
+                  dataKey="quota_5h_remaining_percent"
+                  stroke="var(--color-warning)"
+                  strokeWidth={2}
+                  dot={false}
+                  name="5h 剩余 %"
+                  connectNulls
+                />
+              )}
+              {hasQuotaPercent && (
+                <Line
+                  yAxisId="percent"
+                  type="monotone"
+                  dataKey="quota_week_remaining_percent"
+                  stroke="var(--color-danger)"
+                  strokeWidth={2}
+                  dot={false}
+                  name="周剩余 %"
+                  connectNulls
+                />
+              )}
             </AreaChart>
           </ResponsiveContainer>
         </div>

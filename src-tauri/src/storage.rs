@@ -33,7 +33,7 @@ impl Database {
                 query_headers TEXT NOT NULL,
                 query_params TEXT NOT NULL,
                 refresh_interval INTEGER NOT NULL,
-                is_enabled INTEGER NOT NULL,
+                is_enabled INTEGER NOT NULL DEFAULT 1,
                 status TEXT NOT NULL
             )",
             [],
@@ -56,6 +56,34 @@ impl Database {
             )",
             [],
         )?;
+
+        // 升级旧库：补 quota_* 列（仅在缺列时 ADD COLUMN，幂等）
+        let existing_columns: std::collections::HashSet<String> = conn
+            .prepare("PRAGMA table_info(usage_history)")?
+            .query_map([], |row| row.get::<_, String>(1))?
+            .filter_map(Result::ok)
+            .collect();
+        let quota_columns = [
+            ("quota_5h_remaining", "REAL"),
+            ("quota_5h_remaining_percent", "REAL"),
+            ("quota_5h_total", "REAL"),
+            ("quota_5h_used", "REAL"),
+            ("quota_week_remaining", "REAL"),
+            ("quota_week_remaining_percent", "REAL"),
+            ("quota_week_total", "REAL"),
+            ("quota_week_used", "REAL"),
+            ("quota_month_remaining", "REAL"),
+            ("quota_month_total", "REAL"),
+            ("quota_month_used", "REAL"),
+        ];
+        for (name, ty) in quota_columns {
+            if !existing_columns.contains(name) {
+                conn.execute(
+                    &format!("ALTER TABLE usage_history ADD COLUMN {} {}", name, ty),
+                    [],
+                )?;
+            }
+        }
 
         // 创建索引加速查询
         conn.execute(
@@ -96,6 +124,21 @@ impl Database {
              ON app_logs(level, category)",
             [],
         )?;
+
+        // 一次性 migrate：把历史 is_enabled=0 的 Provider 设为 1。
+        // 背景：早期 schema 没设 DEFAULT 1，且 enable_preset 之外的路径
+        // 可能让 is_enabled=0。重启后 poller 才能拉到。
+        // 该操作幂等：is_enabled=1 的记录保持原状，0 的记录更新为 1。
+        let updated = conn.execute(
+            "UPDATE providers SET is_enabled = 1 WHERE is_enabled = 0",
+            [],
+        )?;
+        if updated > 0 {
+            eprintln!(
+                "[storage migrate] re-enabled {} provider(s) with is_enabled=0",
+                updated
+            );
+        }
 
         Ok(Self {
             conn: Mutex::new(conn),
@@ -175,6 +218,7 @@ impl Database {
     
     pub fn delete_provider(&self, id: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM usage_history WHERE provider_id = ?1", params![id])?;
         conn.execute("DELETE FROM providers WHERE id = ?1", params![id])?;
         Ok(())
     }
@@ -182,12 +226,22 @@ impl Database {
     // ===== 使用历史相关方法 =====
     
     pub fn save_usage_history(&self, status: &UsageStatus) -> Result<()> {
+        let mut status = status.clone();
+        if status.balance.is_none() {
+            if let (Some(limit), Some(used)) = (status.balance_limit, status.balance_used) {
+                status.balance = Some((limit - used).max(0.0));
+            }
+        }
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO usage_history 
-             (provider_id, timestamp, balance, balance_used, balance_limit, 
-              requests_today, error_rate, avg_latency, last_error)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            "INSERT INTO usage_history
+             (provider_id, timestamp, balance, balance_used, balance_limit,
+              requests_today, error_rate, avg_latency, last_error,
+              quota_5h_remaining, quota_5h_remaining_percent, quota_5h_total, quota_5h_used,
+              quota_week_remaining, quota_week_remaining_percent, quota_week_total, quota_week_used,
+              quota_month_remaining, quota_month_total, quota_month_used)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9,
+                     ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
             params![
                 status.provider_id,
                 status.timestamp,
@@ -198,6 +252,17 @@ impl Database {
                 status.error_rate,
                 status.avg_latency,
                 status.last_error,
+                status.quota_5h_remaining,
+                status.quota_5h_remaining_percent,
+                status.quota_5h_total,
+                status.quota_5h_used,
+                status.quota_week_remaining,
+                status.quota_week_remaining_percent,
+                status.quota_week_total,
+                status.quota_week_used,
+                status.quota_month_remaining,
+                status.quota_month_total,
+                status.quota_month_used,
             ],
         )?;
         Ok(())
@@ -214,13 +279,16 @@ impl Database {
         
         let mut stmt = conn.prepare(
             "SELECT provider_id, timestamp, balance, balance_used, balance_limit,
-                    requests_today, error_rate, avg_latency, last_error
+                    requests_today, error_rate, avg_latency, last_error,
+                    quota_5h_remaining, quota_5h_remaining_percent, quota_5h_total, quota_5h_used,
+                    quota_week_remaining, quota_week_remaining_percent, quota_week_total, quota_week_used,
+                    quota_month_remaining, quota_month_total, quota_month_used
              FROM usage_history
              WHERE provider_id = ?1 AND timestamp >= ?2
              ORDER BY timestamp DESC
              LIMIT ?3"
         )?;
-        
+
         let rows = stmt.query_map(params![provider_id, since_ts, limit], |row| {
             Ok(UsageStatus {
                 provider_id: row.get(0)?,
@@ -232,6 +300,17 @@ impl Database {
                 error_rate: row.get(6)?,
                 avg_latency: row.get(7)?,
                 last_error: row.get(8)?,
+                quota_5h_remaining: row.get(9)?,
+                quota_5h_remaining_percent: row.get(10)?,
+                quota_5h_total: row.get(11)?,
+                quota_5h_used: row.get(12)?,
+                quota_week_remaining: row.get(13)?,
+                quota_week_remaining_percent: row.get(14)?,
+                quota_week_total: row.get(15)?,
+                quota_week_used: row.get(16)?,
+                quota_month_remaining: row.get(17)?,
+                quota_month_total: row.get(18)?,
+                quota_month_used: row.get(19)?,
                 ..Default::default()
             })
         })?;

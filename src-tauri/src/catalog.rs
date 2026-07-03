@@ -50,7 +50,7 @@ pub fn get_catalog() -> Vec<ProviderPreset> {
             description: "字节火山方舟 Coding Plan，5h + 周 + 月三维额度".into(),
             docs_url: "https://www.volcengine.com/docs/82379/2165245".into(),
             requires_body: true,
-            default_model: Some("doubao-seed-code-1-0-260215".into()),
+            default_model: Some("ark-code-latest".into()),
         },
         ProviderPreset {
             id: "volcengine_token".into(),
@@ -65,7 +65,7 @@ pub fn get_catalog() -> Vec<ProviderPreset> {
             description: "字节火山方舟 Token Plan（别名，与 Coding Plan 使用同一接口）".into(),
             docs_url: "https://www.volcengine.com/docs/82379/2165245".into(),
             requires_body: true,
-            default_model: Some("doubao-seed-code-1-0-260215".into()),
+            default_model: Some("ark-code-latest".into()),
         },
 
         // ===== 海外 Coding Plan =====

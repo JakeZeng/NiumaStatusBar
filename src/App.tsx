@@ -12,6 +12,7 @@ import { ImportExport } from './components/ImportExport';
 import { ProviderHub } from './components/ProviderHub';
 import { MobileMenu } from './components/MobileMenu';
 import { CloseConfirmDialog } from './components/CloseConfirmDialog';
+import { ConfirmDialog } from './components/ConfirmDialog';
 import { LogViewer } from './components/LogViewer';
 import { Plus, Library, ScrollText } from 'lucide-react';
 import { api, type ProviderConfig } from './api';
@@ -26,6 +27,7 @@ export default function App() {
   const [logViewerOpen, setLogViewerOpen] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
+  const [deletingTarget, setDeletingTarget] = useState<ProviderConfig | null>(null);
 
   useEffect(() => {
     loadProviders();
@@ -44,7 +46,9 @@ export default function App() {
     try {
       const list = await api.getProviders();
       setProviders(list);
-      if (list.length > 0 && !selectedProvider) {
+      if (!list.some(p => p.id === selectedProvider)) {
+        setSelectedProvider(list[0]?.id ?? null);
+      } else if (list.length > 0 && !selectedProvider) {
         setSelectedProvider(list[0].id);
       }
     } catch (err) {
@@ -70,12 +74,26 @@ export default function App() {
 
   const handleProvidersUpdated = (newProviders: ProviderConfig[]) => {
     setProviders(newProviders);
-    if (newProviders.length > 0 && !selectedProvider) {
+    if (!newProviders.some(p => p.id === selectedProvider)) {
+      setSelectedProvider(newProviders[0]?.id ?? null);
+    } else if (newProviders.length > 0 && !selectedProvider) {
       setSelectedProvider(newProviders[0].id);
     }
   };
 
+  const handleDelete = async (p: ProviderConfig) => {
+    try {
+      await api.deleteProvider(p.id);
+      await loadProviders();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setDeletingTarget(null);
+    }
+  };
+
   const selectedProviderName = providers.find(p => p.id === selectedProvider)?.name || '';
+  const selectedProviderType = providers.find(p => p.id === selectedProvider)?.provider;
 
   // 供 MobileMenu 调用的统一打开入口
   const openHub = () => setHubOpen(true);
@@ -177,6 +195,7 @@ export default function App() {
           <HistoryChart
             providerId={selectedProvider}
             providerName={selectedProviderName}
+            providerType={selectedProviderType}
           />
         )}
 
@@ -204,6 +223,7 @@ export default function App() {
                 key={provider.id}
                 provider={provider}
                 onEdit={(p) => { setEditing(p); setModalOpen(true); }}
+                onDelete={(p) => setDeletingTarget(p)}
               />
             ))}
           </div>
@@ -251,6 +271,19 @@ export default function App() {
       <CloseConfirmDialog
         open={closeDialogOpen}
         onDismiss={() => setCloseDialogOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={!!deletingTarget}
+        title={deletingTarget
+          ? t('provider.deleteConfirmTitle', { name: deletingTarget.name })
+          : ''}
+        message={t('provider.deleteConfirmMessage')}
+        confirmLabel={t('provider.deleteConfirm')}
+        cancelLabel={t('provider.cancel')}
+        danger
+        onConfirm={() => deletingTarget ? handleDelete(deletingTarget) : Promise.resolve()}
+        onDismiss={() => setDeletingTarget(null)}
       />
     </div>
   );
