@@ -27,7 +27,7 @@ public class RustPlugin implements Plugin<Project> {
         List<String> archList = archListProp != null ? Arrays.asList(archListProp.split(",")) : defaultArchList;
 
         String targetListProp = (String) project.findProperty("targetList");
-        List<String> targetsList = targetListProp != null ? Arrays.asList(targetListProp.split(",")) : Arrays.asList("aarch64", "armv7", "i686", "x86_64");
+        List<String> targetsList = targetListProp != null ? Arrays.asList(targetListProp.split(",")) : Arrays.asList("aarch64-linux-android", "armv7-linux-androideabi", "i686-linux-android", "x86_64-linux-android");
 
         project.getExtensions().configure(ApplicationExtension.class, extension -> {
             extension.getFlavorDimensions().add("abi");

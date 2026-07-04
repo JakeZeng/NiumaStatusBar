@@ -23,6 +23,7 @@ val tauriProperties = Properties().apply {
 android {
     compileSdk = 36
     namespace = "com.aimonitor.app"
+    ndkVersion = "27.0.12077973"
 
     signingConfigs {
         create("release") {
@@ -42,6 +43,10 @@ android {
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
+        ndk {
+            // MuMu 调试用，只打 x86_64 以避免 aarch64/armv7/i686 target 缺失导致构建失败
+            abiFilters += listOf("x86_64")
+        }
     }
     buildTypes {
         getByName("debug") {

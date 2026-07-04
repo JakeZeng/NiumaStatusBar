@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "mobile-capability",
+  "description": "移动端能力：基础 core + shell + notification",
+  "platforms": ["iOS", "android"],
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:app:allow-default-window-icon",
+    "shell:default",
+    "notification:default"
+  ]
+}
