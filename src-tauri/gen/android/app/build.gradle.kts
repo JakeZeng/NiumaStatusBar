@@ -44,8 +44,10 @@ android {
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
         ndk {
-            // MuMu 调试用，只打 x86_64 以避免 aarch64/armv7/i686 target 缺失导致构建失败
-            abiFilters += listOf("x86_64")
+            // 真机（小米等 ARM 设备）必须包含 arm64-v8a；armeabi-v7a 兼容旧机型；
+            // x86_64 保留给 MuMu 模拟器调试。仅打 x86_64 会导致 ARM 设备上
+            // 找不到 libai_model_monitor_lib.so 而直接闪退。
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
         }
     }
     buildTypes {
