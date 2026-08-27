@@ -309,7 +309,7 @@ jobs:
 
           # Add `signingConfig = ...` line in the `release` buildType.
           if ! grep -q 'signingConfig = signingConfigs.getByName("release")' "$GRADLE_FILE"; then
-            sed -i 's/^            isMinifyEnabled = true$/            isMinifyEnabled = true\n            signingConfig = signingConfigs.getByName("release")/' "$GRADLE_FILE"
+            sed -i 's/^            isMinifyEnabled = true$/            isMinifyEnabled = false\n            signingConfig = signingConfigs.getByName("release")/' "$GRADLE_FILE"
           fi
 
           echo "--- app/build.gradle.kts (buildFeatures + signing blocks) ---"
@@ -879,6 +879,18 @@ jobs:
           export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$PATH"
 
           cd src-tauri
+
+          # 同步前端构建产物到安卓 assets。
+          # CI 绕过 `tauri android build` 直接用 `gradlew assembleRelease`，
+          # 而 tauri-cli 把 frontendDist 拷贝进 app/src/main/assets/ 的步骤
+          # 被跳过了，导致 APK 没有 index.html —— WebView 加载失败、
+          # 打开即闪退 (v0.1.26 实测 assets 仅含 tauri.conf.json + dexopt)。
+          # 手动把仓库根的 dist/ 同步进 assets（保留 init 生成的 tauri.conf.json）。
+          echo "Syncing frontend dist -> android assets"
+          find gen/android/app/src/main/assets -mindepth 1 ! -name 'tauri.conf.json' -delete 2>/dev/null || true
+          cp -r ../dist/. gen/android/app/src/main/assets/
+          echo "--- assets after sync ---"
+          ls -la gen/android/app/src/main/assets/ | head
 
           echo "Starting Android APK build..."
           # Use `assembleRelease` (not per-flavor task like `assembleArm64Release`).
