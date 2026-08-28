@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Minimize2, LogOut, X } from 'lucide-react';
 import { api } from '../api';
 import { ModalBackdrop } from './ModalBackdrop';
@@ -13,6 +13,16 @@ type Choice = 'minimize_to_tray' | 'exit';
 export function CloseConfirmDialog({ open, onDismiss }: Props) {
   const [remember, setRemember] = useState(false);
   const [busy, setBusy] = useState<Choice | null>(null);
+
+  // 每次对话框重新打开时重置交互状态。
+  // 否则上一次选择"最小化到托盘"后 busy 会残留，
+  // 导致下一次打开时三个按钮（取消/直接退出/最小化到托盘）全部被禁用。
+  useEffect(() => {
+    if (open) {
+      setBusy(null);
+      setRemember(false);
+    }
+  }, [open]);
 
   if (!open) return null;
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Search, Check, Plus, ExternalLink, Power, PowerOff, X, Key, Sparkles } from 'lucide-react';
+import { Search, Check, Plus, ExternalLink, Power, PowerOff, X, Key, Sparkles, Settings } from 'lucide-react';
 import { api, type ProviderPreset, type ProviderConfig } from '../api';
 import { ModalBackdrop } from './ModalBackdrop';
 
@@ -7,6 +7,10 @@ interface Props {
   myProviders: ProviderConfig[];
   onProvidersUpdated: (providers: ProviderConfig[]) => void;
   onClose: () => void;
+  /** 打开"自定义 Provider"配置弹窗（从供应商中心统一发起） */
+  onAddCustom: () => void;
+  /** 完整编辑某个已添加的 Provider（含全部字段） */
+  onEdit: (p: ProviderConfig) => void;
 }
 
 const CATEGORY_INFO: Record<string, { label: string; icon: string; color: string }> = {
@@ -16,7 +20,7 @@ const CATEGORY_INFO: Record<string, { label: string; icon: string; color: string
   custom: { label: '自定义', icon: '🛠️', color: 'text-purple-400' },
 };
 
-export function ProviderHub({ myProviders, onProvidersUpdated, onClose }: Props) {
+export function ProviderHub({ myProviders, onProvidersUpdated, onClose, onAddCustom, onEdit }: Props) {
   const [catalog, setCatalog] = useState<ProviderPreset[]>([]);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState<string>('all');
@@ -223,17 +227,27 @@ export function ProviderHub({ myProviders, onProvidersUpdated, onClose }: Props)
                     )}
                     <div className="flex gap-1 ml-auto">
                       {isAdded && myInstance && (
-                        <button
-                          onClick={() => handleToggle(myInstance)}
-                          className={`p-1.5 rounded-md text-xs transition-colors ${
-                            myInstance.isEnabled
-                              ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
-                              : 'bg-gray-500/20 text-gray-400 hover:bg-gray-500/30'
-                          }`}
-                          title={myInstance.isEnabled ? '点击禁用' : '点击启用'}
-                        >
-                          {myInstance.isEnabled ? <Power className="w-3.5 h-3.5" /> : <PowerOff className="w-3.5 h-3.5" />}
-                        </button>
+                        <>
+                          <button
+                            onClick={() => onEdit(myInstance)}
+                            className="p-1.5 rounded-md text-xs transition-colors
+                                       bg-blue-500/20 text-blue-400 hover:bg-blue-500/30"
+                            title="编辑"
+                          >
+                            <Settings className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleToggle(myInstance)}
+                            className={`p-1.5 rounded-md text-xs transition-colors ${
+                              myInstance.isEnabled
+                                ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
+                                : 'bg-gray-500/20 text-gray-400 hover:bg-gray-500/30'
+                            }`}
+                            title={myInstance.isEnabled ? '点击禁用' : '点击启用'}
+                          >
+                            {myInstance.isEnabled ? <Power className="w-3.5 h-3.5" /> : <PowerOff className="w-3.5 h-3.5" />}
+                          </button>
+                        </>
                       )}
                       <button
                         onClick={() => {
@@ -259,7 +273,7 @@ export function ProviderHub({ myProviders, onProvidersUpdated, onClose }: Props)
         </div>
 
         {/* Footer Stats */}
-        <div className="flex items-center justify-between p-4 border-t border-[var(--border-color)] 
+        <div className="flex items-center justify-between gap-3 p-4 border-t border-[var(--border-color)] 
                        bg-[var(--bg-secondary)]/30 text-sm">
           <div className="flex items-center gap-4 text-[var(--text-secondary)]">
             <span>共 {catalog.length} 个供应商</span>
@@ -268,14 +282,26 @@ export function ProviderHub({ myProviders, onProvidersUpdated, onClose }: Props)
             <span>·</span>
             <span>启用 {myProviders.filter(p => p.isEnabled).length}</span>
           </div>
-          <button
-            onClick={onClose}
-            className="px-4 py-1.5 rounded-lg bg-[var(--bg-card)] 
-                     border border-[var(--border-color)] text-[var(--text-primary)]
-                     hover:border-[var(--color-primary)]"
-          >
-            完成
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onAddCustom}
+              className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg
+                       bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-secondary)]
+                       text-white font-medium hover:shadow-[var(--glow-primary)]
+                       transition-all"
+            >
+              <Plus className="w-4 h-4" />
+              自定义 Provider
+            </button>
+            <button
+              onClick={onClose}
+              className="px-4 py-1.5 rounded-lg bg-[var(--bg-card)] 
+                       border border-[var(--border-color)] text-[var(--text-primary)]
+                       hover:border-[var(--color-primary)]"
+            >
+              完成
+            </button>
+          </div>
         </div>
       </div>
 

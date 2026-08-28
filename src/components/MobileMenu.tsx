@@ -1,12 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { MoreVertical, Globe, Palette, Download, X, Library, Plus, ScrollText } from 'lucide-react';
+import { MoreVertical, Globe, Palette, Download, X, Library, ScrollText } from 'lucide-react';
 import { themeManager, THEMES, type ThemeId } from '../themes/ThemeManager';
 import { ImportExport } from './ImportExport';
 
 interface Props {
   onOpenHub?: () => void;
-  onOpenAddCustom?: () => void;
   onImportExport?: () => void;
   onOpenLogs?: () => void;
 }
@@ -16,7 +15,7 @@ interface Props {
  * 收纳：供应商中心、自定义、导入导出、日志、语言、主题
  * 仅在 < sm 屏幕下显示
  */
-export function MobileMenu({ onOpenHub, onOpenAddCustom, onImportExport, onOpenLogs }: Props) {
+export function MobileMenu({ onOpenHub, onImportExport, onOpenLogs }: Props) {
   const { i18n } = useTranslation();
   const [open, setOpen] = useState(false);
   const [subPage, setSubPage] = useState<'main' | 'theme' | 'language' | 'io'>('main');
@@ -57,11 +56,6 @@ export function MobileMenu({ onOpenHub, onOpenAddCustom, onImportExport, onOpenL
     close();
   };
 
-  const handleAddCustom = () => {
-    onOpenAddCustom?.();
-    close();
-  };
-
   const handleLogs = () => {
     onOpenLogs?.();
     close();
@@ -99,16 +93,7 @@ export function MobileMenu({ onOpenHub, onOpenAddCustom, onImportExport, onOpenL
               >
                 <Library className="w-4 h-4 text-[var(--color-primary)]" />
                 <span className="text-sm flex-1">供应商中心</span>
-              </button>
-              <button
-                onClick={handleAddCustom}
-                className="w-full flex items-center gap-3 px-4 py-3
-                         hover:bg-[var(--bg-overlay)] active:bg-[var(--bg-overlay)]
-                         transition-colors text-left
-                         text-[var(--text-primary)]"
-              >
-                <Plus className="w-4 h-4 text-[var(--color-primary)]" />
-                <span className="text-sm flex-1">自定义 Provider</span>
+                <span className="text-xs text-[var(--text-muted)]">含自定义</span>
               </button>
               <button
                 onClick={handleLogs}

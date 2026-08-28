@@ -2,14 +2,13 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CheckCircle, XCircle, RefreshCw, Settings, Trash2 } from 'lucide-react';
+import { CheckCircle, XCircle, RefreshCw, Trash2 } from 'lucide-react';
 import type { ProviderConfig, UsageStatus } from '../api';
 import { getCurrencySymbol } from '../lib/currency';
 import { formatRelativeReset } from '../lib/format';
 
 interface Props {
   provider: ProviderConfig;
-  onEdit: (p: ProviderConfig) => void;
   onDelete?: (p: ProviderConfig) => void;
 }
 
@@ -89,7 +88,7 @@ function QuotaRow({ label, remaining, total, used, remainingPercent, resetAt }: 
   );
 }
 
-export function ProviderCard({ provider, onEdit, onDelete }: Props) {
+export function ProviderCard({ provider, onDelete }: Props) {
   const { t } = useTranslation();
   const [status, setStatus] = useState<UsageStatus | null>(null);
   const [loading, setLoading] = useState(false);
@@ -201,15 +200,6 @@ export function ProviderCard({ provider, onEdit, onDelete }: Props) {
             title="刷新"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
-          <button
-            onClick={() => onEdit(provider)}
-            className="p-2 rounded-lg hover:bg-[var(--bg-overlay)]
-                       text-[var(--text-secondary)] hover:text-[var(--color-primary)]
-                       transition-colors"
-            title="编辑"
-          >
-            <Settings className="w-4 h-4" />
           </button>
           {onDelete && (
             <button

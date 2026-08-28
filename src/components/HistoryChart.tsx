@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart, Line } from 'recharts';
@@ -10,6 +10,8 @@ interface Props {
   providerId: string;
   providerName: string;
   providerType?: string;
+  /** 刷新间隔（秒）。图表会按此频率自动重新拉取，随轮询跳动 */
+  refreshInterval?: number;
 }
 
 type TimeRange = '1h' | '6h' | '24h' | '7d';
@@ -21,17 +23,13 @@ const TIME_RANGES: { key: TimeRange; labelKey: string; seconds: number }[] = [
   { key: '7d', labelKey: 'chart.range7d', seconds: 604800 },
 ];
 
-export function HistoryChart({ providerId, providerName, providerType }: Props) {
+export function HistoryChart({ providerId, providerName, providerType, refreshInterval }: Props) {
   const { t } = useTranslation();
   const [data, setData] = useState<UsageStatus[]>([]);
   const [range, setRange] = useState<TimeRange>('24h');
   const [rangeOpen, setRangeOpen] = useState(false);
 
-  useEffect(() => {
-    loadHistory();
-  }, [providerId, range]);
-
-  const loadHistory = async () => {
+  const loadHistory = useCallback(async () => {
     try {
       const rangeConfig = TIME_RANGES.find(r => r.key === range)!;
       const since = Math.floor(Date.now() / 1000) - rangeConfig.seconds;
@@ -45,7 +43,19 @@ export function HistoryChart({ providerId, providerName, providerType }: Props) 
     } catch (err) {
       console.error('Failed to load history:', err);
     }
-  };
+  }, [providerId, range]);
+
+  // 切换供应商或时间范围时立即刷新一次
+  useEffect(() => {
+    loadHistory();
+  }, [loadHistory]);
+
+  // 随刷新频率自动跳动：按 refreshInterval 周期性重新拉取
+  useEffect(() => {
+    if (!refreshInterval || refreshInterval < 10) return;
+    const id = setInterval(() => loadHistory(), refreshInterval * 1000);
+    return () => clearInterval(id);
+  }, [loadHistory, refreshInterval]);
 
   const formatTime = (ts: number) => {
     const d = new Date(ts * 1000);

@@ -14,7 +14,7 @@ import { MobileMenu } from './components/MobileMenu';
 import { CloseConfirmDialog } from './components/CloseConfirmDialog';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { LogViewer } from './components/LogViewer';
-import { Plus, Library, ScrollText } from 'lucide-react';
+import { Library, ScrollText } from 'lucide-react';
 import { api, type ProviderConfig } from './api';
 
 export default function App() {
@@ -95,11 +95,12 @@ export default function App() {
   const selectedProviderName = providers.find(p => p.id === selectedProvider)?.name || '';
   const selectedProviderType = providers.find(p => p.id === selectedProvider)?.provider;
 
-  // 供 MobileMenu 调用的统一打开入口
+  // 供 MobileMenu / ProviderHub 调用的统一打开入口
   const openHub = () => setHubOpen(true);
   const openAddCustom = () => {
     setEditing(null);
     setModalOpen(true);
+    setHubOpen(false);
   };
 
   return (
@@ -145,25 +146,15 @@ export default function App() {
               <ScrollText className="w-4 h-4" />
               <span>{t('logs.title', '日志')}</span>
             </button>
-            <button
-              onClick={openAddCustom}
-              className="hidden sm:flex items-center gap-1.5 px-4 py-2 rounded-lg
-                       bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-secondary)]
-                       text-white font-medium hover:shadow-[var(--glow-primary)] transition-all text-sm"
-            >
-              <Plus className="w-4 h-4" />
-              <span>自定义</span>
-            </button>
             <div className="hidden md:block">
               <LanguageSwitcher />
             </div>
             <div className="hidden md:block">
               <ThemeSwitcher />
             </div>
-            {/* 移动端：收纳"供应商中心/自定义/导入导出/语言/主题/日志" */}
+            {/* 移动端：收纳"供应商中心/导入导出/语言/主题/日志" */}
             <MobileMenu
               onOpenHub={openHub}
-              onOpenAddCustom={openAddCustom}
               onOpenLogs={() => setLogViewerOpen(true)}
               onImportExport={() => { /* 由 hub 间接管理 */ }}
             />
@@ -196,6 +187,7 @@ export default function App() {
             providerId={selectedProvider}
             providerName={selectedProviderName}
             providerType={selectedProviderType}
+            refreshInterval={providers.find(p => p.id === selectedProvider)?.refreshInterval}
           />
         )}
 
@@ -222,7 +214,6 @@ export default function App() {
               <ProviderCard
                 key={provider.id}
                 provider={provider}
-                onEdit={(p) => { setEditing(p); setModalOpen(true); }}
                 onDelete={(p) => setDeletingTarget(p)}
               />
             ))}
@@ -230,23 +221,7 @@ export default function App() {
         )}
       </main>
 
-      {/* 移动端悬浮按钮：仅在有 provider 时显示 "添加"，避免遮盖"打开供应商中心"引导 */}
-      {providers.length > 0 && (
-        <button
-          onClick={openAddCustom}
-          className="sm:hidden fixed bottom-5 right-5 z-30
-                   w-14 h-14 rounded-full
-                   bg-gradient-to-br from-[var(--color-primary)] to-[var(--color-secondary)]
-                   text-white shadow-[var(--glow-primary)]
-                   flex items-center justify-center
-                   active:scale-95 transition-transform
-                   safe-bottom"
-          title="自定义 Provider"
-          aria-label="添加自定义 Provider"
-        >
-          <Plus className="w-6 h-6" />
-        </button>
-      )}
+      {/* 移动端"自定义 Provider"入口已并入供应商中心，故此处不再单独放置悬浮按钮 */}
 
       <ConfigModal
         isOpen={modalOpen}
@@ -260,6 +235,8 @@ export default function App() {
           myProviders={providers}
           onProvidersUpdated={handleProvidersUpdated}
           onClose={() => setHubOpen(false)}
+          onAddCustom={openAddCustom}
+          onEdit={(p) => { setEditing(p); setModalOpen(true); setHubOpen(false); }}
         />
       )}
 
