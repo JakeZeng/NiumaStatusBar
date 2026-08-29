@@ -412,68 +412,63 @@ jobs:
           # Android dirs come from `cargo metadata` because the
           # cargo-registry path varies per runner / OS / Rust version and
           # MUST NOT be hard-coded.
-          #
-          # Use a Python heredoc with `<<'PYEOF'` (no shell expansion) so
-          # `$rootDir` is preserved verbatim for the Groovy DSL -- it's a
-          # Gradle-injected project layout variable, not a shell variable.
-          cd src-tauri
-          SETTINGS_PATH="$ROOT/tauri.settings.gradle" python3 <<'PYEOF'
-          import json, os, subprocess, sys
-          try:
-              meta = json.loads(subprocess.check_output(
-                  ['cargo', 'metadata', '--format-version=1'],
-                  stderr=subprocess.PIPE,
-              ))
-          except subprocess.CalledProcessError as e:
-              print('FATAL: cargo metadata failed:', e.stderr.decode(), file=sys.stderr)
-              sys.exit(1)
-          from pathlib import Path
-          plugins = ('tauri-plugin-shell', 'tauri-plugin-notification')
-          # Use pathlib so we handle Windows backslashes correctly too
-          # (CI runs on Linux where this is moot, but local dry-runs
-          # shouldn't silently produce wrong paths either). as_posix()
-          # normalizes the separator to '/' so the generated Groovy
-          # file uses POSIX-style paths regardless of runner OS.
-          paths = {p['name']: (Path(p['manifest_path']).parent / 'android').as_posix()
-                   for p in meta.get('packages', [])
-                   if p['name'] in plugins}
-          missing = [n for n in plugins if n not in paths]
+
+          # 1. Write a tiny Python helper that reads cargo metadata JSON on
+          # stdin and emits `NAME=path` lines on stdout for the two plugins.
+          # Keeping it as a standalone file (not an inline -c string) avoids
+          # YAML literal-block indentation pitfalls and shell-quoting pain.
+          cat > /tmp/get_plugin_dirs.py <<'PYEOF'
+          import json, sys
+          d = json.load(sys.stdin)
+          plugins = ("tauri-plugin-shell", "tauri-plugin-notification")
+          out = {p["name"]: p["manifest_path"].rsplit("/", 1)[0] + "/android"
+                 for p in d.get("packages", [])
+                 if p["name"] in plugins}
+          missing = [n for n in plugins if n not in out]
           if missing:
-              print('FATAL: cargo metadata did not report: ' + ','.join(missing), file=sys.stderr)
+              print("FATAL: cargo metadata did not report: " + ",".join(missing), file=sys.stderr)
               sys.exit(1)
-          for name, d in paths.items():
-              if not os.path.isdir(d):
-                  print(f'FATAL: plugin Android dir does not exist: {d}', file=sys.stderr)
-                  sys.exit(1)
-              if not os.path.isfile(os.path.join(d, 'build.gradle.kts')):
-                  print(f'FATAL: {d}/build.gradle.kts missing -- plugin Android subproject not scaffolded', file=sys.stderr)
-                  sys.exit(1)
-          # Preserve init's emit order (tauri-android, then notification,
-          # then shell) so this file looks like what `tauri android init`
-          # would have written if --ci mode had generated it.
-          settings = "
-".join([
-              'include(":tauri-android")',
-              'include(":tauri-plugin-notification")',
-              'include(":tauri-plugin-shell")',
-              'project(":tauri-android").projectDir = file("$rootDir/.tauri/tauri-api")',
-              f'project(":tauri-plugin-notification").projectDir = file("{paths["tauri-plugin-notification"]}")',
-              f'project(":tauri-plugin-shell").projectDir = file("{paths["tauri-plugin-shell"]}")',
-          ]) + "
-"
-          out_path = os.environ['SETTINGS_PATH']
-          with open(out_path, 'w') as f:
-              f.write(settings)
-          print(f'Wrote {out_path}')
+          for name, d in out.items():
+              print(name.upper().replace("-", "_") + "_DIR=" + d)
           PYEOF
+
+          # 2. Run it, capture the NAME=path lines, eval into the shell.
+          cd src-tauri
+          PLUGIN_DIRS=$(cargo metadata --format-version=1 | python3 /tmp/get_plugin_dirs.py)
+          eval "$PLUGIN_DIRS"
           cd ..
+          if [ -z "${TAURI_PLUGIN_SHELL_DIR:-}" ] || [ -z "${TAURI_PLUGIN_NOTIFICATION_DIR:-}" ]; then
+            echo "FATAL: cargo metadata did not yield plugin paths"
+            echo "PLUGIN_DIRS output was:"
+            echo "$PLUGIN_DIRS"
+            exit 1
+          fi
+
+          # 3. Validate the dirs exist + have build.gradle.kts.
+          for d in "$TAURI_PLUGIN_SHELL_DIR" "$TAURI_PLUGIN_NOTIFICATION_DIR"; do
+            if [ ! -d "$d" ]; then echo "FATAL: $d does not exist"; exit 1; fi
+            if [ ! -f "$d/build.gradle.kts" ]; then echo "FATAL: $d/build.gradle.kts missing"; exit 1; fi
+          done
+
+          # 4. Write tauri.settings.gradle. Unquoted heredoc (`<<EOF`, not
+          # `<<'EOF'`) so $NOTIF_DIR / $SHELL_DIR expand, but escape
+          # $rootDir as \$rootDir so the Groovy DSL preserves it (it's a
+          # Gradle-injected project layout variable, NOT a shell var).
+          cat > "$ROOT/tauri.settings.gradle" <<EOF
+          include(":tauri-android")
+          include(":tauri-plugin-notification")
+          include(":tauri-plugin-shell")
+          project(":tauri-android").projectDir = file("\$rootDir/.tauri/tauri-api")
+          project(":tauri-plugin-notification").projectDir = file("$TAURI_PLUGIN_NOTIFICATION_DIR")
+          project(":tauri-plugin-shell").projectDir = file("$TAURI_PLUGIN_SHELL_DIR")
+          EOF
 
           # NOTE: app/build.gradle.kts has `apply(from = "tauri.build.gradle.kts")`,
           # and `apply(from = ...)` is resolved relative to the calling script's
           # directory (app/), so the file MUST live at $ROOT/app/, not $ROOT/.
           # ALSO: the apply is OUTSIDE the `dependencies { }` block in app/build.gradle.kts
           # (line 91 vs the block closing on line 89), so this file is compiled as
-          # a standalone script — `implementation` (which lives on the
+          # a standalone script -- `implementation` (which lives on the
           # DependencyHandler receiver) is unresolved at script-compile time.
           # The fix is the same as what tauri-build's `generate_gradle_files`
           # does (see crates/tauri-build/src/mobile.rs in the tauri repo):
@@ -482,7 +477,7 @@ jobs:
           # `dependencies { }` as if it were a method.
           #
           # The implementation list must include ALL three subprojects that
-          # tauri.settings.gradle references — see the long comment block
+          # tauri.settings.gradle references -- see the long comment block
           # above for why. Dropping :tauri-plugin-shell from here breaks the
           # APK the same way dropping it from tauri.settings.gradle does.
           cat > "$ROOT/app/tauri.build.gradle.kts" <<'EOF'
