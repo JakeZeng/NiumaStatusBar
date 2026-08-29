@@ -394,10 +394,43 @@ jobs:
           # tauri-android is a Gradle subproject generated on first cargo build
           # (WRY build.rs writes the Kotlin source via WRY_ANDROID_KOTLIN_FILES_OUT_DIR).
           # tauri-cli 2.11.x doesn't create these wiring files in --ci mode, so we do.
-          cat > "$ROOT/tauri.settings.gradle" <<'EOF'
-          include(":tauri-android")
-          project(":tauri-android").projectDir = file("$rootDir/.tauri/tauri-api")
-          EOF
+          #
+          # IMPORTANT: `tauri android init --ci` writes tauri.settings.gradle with
+          # THREE subprojects:
+          #   - :tauri-android              (compiled by WRY + tauri-android sources)
+          #   - :tauri-plugin-shell         (provides app/tauri/shell/ShellPlugin.class)
+          #   - :tauri-plugin-notification  (provides app/tauri/notification/NotificationPlugin.class)
+          # The two plugin entries reference the cargo-registry paths; we MUST
+          # keep both. If we only include :tauri-android, Gradle never compiles
+          # :tauri-plugin-shell/android, the resulting APK has no
+          # app/tauri/shell/ShellPlugin in its dex, and WRY 0.55.1's
+          # WryActivity.getAppClass("shell") throws ClassNotFoundException at
+          # launch → app crashes (root cause of v0.1.27/v0.1.28 release flash-
+          # back on Xiaomi). The earlier heredoc that hard-coded only
+          # include(":tauri-android") was wrong — fix is to preserve init's
+          # full include list and only override :tauri-android's projectDir.
+          # We use Python instead of sed because the init-generated line uses
+          # a Groovy `new File(...)` call and a Windows-style absolute path
+          # that vary per runner; a regex pass-through keeps everything else
+          # byte-identical.
+          SETTINGS="$ROOT/tauri.settings.gradle"
+          if [ ! -f "$SETTINGS" ]; then
+            echo "FATAL: $SETTINGS missing after init"
+            exit 1
+          fi
+          python3 - <<PYEOF
+          import re
+          p = "$SETTINGS"
+          src = open(p).read()
+          new = re.sub(
+              r'''project\(['\"]?:tauri-android['\"]?\)\.projectDir\s*=.*''',
+              'project(":tauri-android").projectDir = file("$rootDir/.tauri/tauri-api")',
+              src,
+          )
+          if new == src:
+              raise SystemExit("FATAL: could not find :tauri-android projectDir line in tauri.settings.gradle")
+          open(p, 'w').write(new)
+          PYEOF
 
           # NOTE: app/build.gradle.kts has `apply(from = "tauri.build.gradle.kts")`,
           # and `apply(from = ...)` is resolved relative to the calling script's
@@ -411,10 +444,17 @@ jobs:
           # bring `implementation` into scope as a top-level val by
           # delegating to the `configurations` container, then use it inside
           # `dependencies { }` as if it were a method.
+          #
+          # The implementation list must include ALL three subprojects that
+          # tauri.settings.gradle references — see the long comment block
+          # above for why. Dropping :tauri-plugin-shell from here breaks the
+          # APK the same way dropping it from tauri.settings.gradle does.
           cat > "$ROOT/app/tauri.build.gradle.kts" <<'EOF'
           val implementation by configurations
           dependencies {
               implementation(project(":tauri-android"))
+              implementation(project(":tauri-plugin-shell"))
+              implementation(project(":tauri-plugin-notification"))
           }
           EOF
 
