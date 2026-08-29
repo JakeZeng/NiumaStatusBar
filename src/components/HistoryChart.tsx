@@ -87,10 +87,10 @@ export function HistoryChart({ providerId, providerName, providerType, refreshIn
     <div className="bg-[var(--bg-card)] rounded-xl border border-[var(--border-color)] 
                     shadow-[var(--shadow-card)] p-5">
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <TrendingUp className="w-5 h-5 text-[var(--color-primary)]" />
-          <h3 className="font-semibold text-[var(--text-primary)]">
+      <div className="flex items-center justify-between mb-4 gap-2">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <TrendingUp className="w-5 h-5 text-[var(--color-primary)] shrink-0" />
+          <h3 className="font-semibold text-[var(--text-primary)] text-sm sm:text-base truncate">
             {providerName} · {t('chart.balanceTrend')}
           </h3>
         </div>

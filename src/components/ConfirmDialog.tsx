@@ -56,7 +56,7 @@ export function ConfirmDialog({
                 <AlertTriangle className="w-5 h-5" />
               </div>
             )}
-            <h3 className="text-lg font-bold text-[var(--text-primary)]">{title}</h3>
+            <h3 className="text-base sm:text-lg font-bold text-[var(--text-primary)]">{title}</h3>
           </div>
           <button
             onClick={onDismiss}

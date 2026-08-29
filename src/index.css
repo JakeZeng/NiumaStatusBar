@@ -198,6 +198,20 @@ select {
   background-position: right 0.7rem top 50%;
   background-size: 0.65rem auto;
   padding-right: 1.75rem;
+  /* 自适应: select 显示值不换行,过长用省略号 */
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+  /* 让原生 select 默认字号跟随父级,避免移动端 16px 过大 */
+  font-size: inherit;
+}
+
+/* option 在系统原生下拉里的字号跟随 select */
+select option {
+  font-size: inherit;
+  font-family: inherit;
+  background-color: var(--bg-card);
+  color: var(--text-primary);
 }
 
 /* 模态框打开时防止背景滚动 */

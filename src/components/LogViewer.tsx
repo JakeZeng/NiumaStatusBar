@@ -209,7 +209,7 @@ export function LogViewer({ open, onClose }: Props) {
               <ScrollText className="w-5 h-5 text-[var(--color-primary)]" />
             </div>
             <div>
-              <h2 className="text-lg sm:text-xl font-bold text-[var(--text-primary)]">
+              <h2 className="text-base sm:text-lg font-bold text-[var(--text-primary)]">
                 {t('logs.title', '日志')}
               </h2>
               <p className="text-xs text-[var(--text-secondary)] hidden sm:block">

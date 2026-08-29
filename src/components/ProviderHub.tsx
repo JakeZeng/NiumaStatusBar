@@ -121,8 +121,8 @@ export function ProviderHub({ myProviders, onProvidersUpdated, onClose, onAddCus
               <Sparkles className="w-5 h-5 text-[var(--color-primary)]" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-[var(--text-primary)]">供应商中心</h2>
-              <p className="text-sm text-[var(--text-secondary)]">
+              <h2 className="text-base sm:text-lg font-bold text-[var(--text-primary)]">供应商中心</h2>
+              <p className="text-xs sm:text-sm text-[var(--text-secondary)]">
                 选择你需要的 AI 服务并配置 API Key
               </p>
             </div>
@@ -188,10 +188,10 @@ export function ProviderHub({ myProviders, onProvidersUpdated, onClose, onAddCus
                            transition-all group"
                 >
                   <div className="flex items-start justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-2xl">{info.icon}</span>
-                      <div>
-                        <h3 className="font-semibold text-[var(--text-primary)] text-sm">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <span className="text-xl sm:text-2xl shrink-0">{info.icon}</span>
+                      <div className="min-w-0 flex-1">
+                        <h3 className="font-semibold text-[var(--text-primary)] text-sm truncate">
                           {preset.name}
                         </h3>
                         <span className={`text-xs ${info.color}`}>{info.label}</span>
@@ -311,7 +311,7 @@ export function ProviderHub({ myProviders, onProvidersUpdated, onClose, onAddCus
           <div className="w-full max-w-md bg-[var(--bg-card)] border border-[var(--border-color)]
                         rounded-2xl shadow-2xl p-6 space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-[var(--text-primary)]">
+              <h3 className="text-base sm:text-lg font-bold text-[var(--text-primary)] truncate pr-2">
                 配置 {selectedPreset.name}
               </h3>
               <button

@@ -112,7 +112,7 @@ export default function App() {
                         safe-top">
         <div className="mx-auto w-full max-w-screen-2xl px-3 sm:px-6 lg:px-10 py-2 sm:py-3
                         flex items-center justify-between gap-2">
-          <h1 className="text-sm sm:text-xl md:text-2xl font-bold bg-gradient-to-r
+          <h1 className="text-sm sm:text-base md:text-lg lg:text-xl font-bold bg-gradient-to-r
                         from-[var(--color-primary)] to-[var(--color-secondary)]
                         bg-clip-text text-transparent truncate min-w-0 flex-1">
             粮草用量-v{__APP_VERSION__}

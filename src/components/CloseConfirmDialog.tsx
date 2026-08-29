@@ -51,7 +51,7 @@ export function CloseConfirmDialog({ open, onDismiss }: Props) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3">
-          <h3 className="text-lg font-bold text-[var(--text-primary)]">
+          <h3 className="text-base sm:text-lg font-bold text-[var(--text-primary)]">
             关闭粮草用量？
           </h3>
           <button

@@ -181,11 +181,11 @@ export function ProviderCard({ provider, onDelete }: Props) {
                       rounded-bl-full" />
 
       <div className="flex items-center justify-between mb-3 sm:mb-4">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           {getStatusIcon()}
-          <div>
-            <h3 className="font-bold text-base sm:text-lg text-[var(--text-primary)]">{provider.name}</h3>
-            <p className="text-xs text-[var(--text-secondary)] uppercase tracking-wider">
+          <div className="min-w-0 flex-1">
+            <h3 className="font-bold text-sm sm:text-base text-[var(--text-primary)] truncate">{provider.name}</h3>
+            <p className="text-xs text-[var(--text-secondary)] uppercase tracking-wider truncate">
               {provider.provider}
             </p>
           </div>
@@ -258,10 +258,10 @@ export function ProviderCard({ provider, onDelete }: Props) {
       ) : (
         /* 通用余额展示 */
         <div className="mb-4">
-          <div className="flex items-baseline justify-between mb-2">
-            <span className="text-sm text-[var(--text-secondary)]">{t('provider.balance')}</span>
-            <span className="text-2xl font-bold text-[var(--color-primary)]
-                            drop-shadow-[var(--glow-primary)]">
+          <div className="flex items-baseline justify-between mb-2 gap-2">
+            <span className="text-sm text-[var(--text-secondary)] whitespace-nowrap">{t('provider.balance')}</span>
+            <span className="text-lg sm:text-xl font-bold text-[var(--color-primary)]
+                            drop-shadow-[var(--glow-primary)] truncate min-w-0">
               {status?.balance !== null && status?.balance !== undefined
                 ? `${getCurrencySymbol(status.currency, provider.provider)}${status.balance.toFixed(2)}`
                 : '--'}
