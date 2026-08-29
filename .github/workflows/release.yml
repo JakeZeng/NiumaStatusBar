@@ -395,42 +395,78 @@ jobs:
           # (WRY build.rs writes the Kotlin source via WRY_ANDROID_KOTLIN_FILES_OUT_DIR).
           # tauri-cli 2.11.x doesn't create these wiring files in --ci mode, so we do.
           #
-          # IMPORTANT: `tauri android init --ci` writes tauri.settings.gradle with
-          # THREE subprojects:
-          #   - :tauri-android              (compiled by WRY + tauri-android sources)
-          #   - :tauri-plugin-shell         (provides app/tauri/shell/ShellPlugin.class)
-          #   - :tauri-plugin-notification  (provides app/tauri/notification/NotificationPlugin.class)
-          # The two plugin entries reference the cargo-registry paths; we MUST
-          # keep both. If we only include :tauri-android, Gradle never compiles
+          # IMPORTANT: `tauri android init --ci` does NOT generate
+          # `tauri.settings.gradle` in tauri-cli 2.11.x (only the non-ci
+          # variant does, and even then we'd need to rewrite :tauri-android's
+          # projectDir). We have to write the file from scratch, and it MUST
+          # include all three subprojects:
+          #   - :tauri-android              -> our scaffolded .tauri/tauri-api/
+          #   - :tauri-plugin-shell         -> cargo registry path
+          #   - :tauri-plugin-notification  -> cargo registry path
+          # If we drop the two plugins, Gradle never compiles
           # :tauri-plugin-shell/android, the resulting APK has no
-          # app/tauri/shell/ShellPlugin in its dex, and WRY 0.55.1's
-          # WryActivity.getAppClass("shell") throws ClassNotFoundException at
-          # launch → app crashes (root cause of v0.1.27/v0.1.28 release flash-
-          # back on Xiaomi). The earlier heredoc that hard-coded only
-          # include(":tauri-android") was wrong — fix is to preserve init's
-          # full include list and only override :tauri-android's projectDir.
-          # We use Python instead of sed because the init-generated line uses
-          # a Groovy `new File(...)` call and a Windows-style absolute path
-          # that vary per runner; a regex pass-through keeps everything else
-          # byte-identical.
-          SETTINGS="$ROOT/tauri.settings.gradle"
-          if [ ! -f "$SETTINGS" ]; then
-            echo "FATAL: $SETTINGS missing after init"
-            exit 1
-          fi
-          python3 - <<PYEOF
-          import re
-          p = "$SETTINGS"
-          src = open(p).read()
-          new = re.sub(
-              r'''project\(['\"]?:tauri-android['\"]?\)\.projectDir\s*=.*''',
+          # app/tauri/shell/ShellPlugin.class in its dex, and WRY 0.55.1's
+          # WryActivity.getAppClass("shell") throws ClassNotFoundException
+          # at launch -> Rust panic -> app crashes (root cause of
+          # v0.1.27/v0.1.28 release flash-back on Xiaomi). The plugin
+          # Android dirs come from `cargo metadata` because the
+          # cargo-registry path varies per runner / OS / Rust version and
+          # MUST NOT be hard-coded.
+          #
+          # Use a Python heredoc with `<<'PYEOF'` (no shell expansion) so
+          # `$rootDir` is preserved verbatim for the Groovy DSL -- it's a
+          # Gradle-injected project layout variable, not a shell variable.
+          cd src-tauri
+          SETTINGS_PATH="$ROOT/tauri.settings.gradle" python3 <<'PYEOF'
+          import json, os, subprocess, sys
+          try:
+              meta = json.loads(subprocess.check_output(
+                  ['cargo', 'metadata', '--format-version=1'],
+                  stderr=subprocess.PIPE,
+              ))
+          except subprocess.CalledProcessError as e:
+              print('FATAL: cargo metadata failed:', e.stderr.decode(), file=sys.stderr)
+              sys.exit(1)
+          from pathlib import Path
+          plugins = ('tauri-plugin-shell', 'tauri-plugin-notification')
+          # Use pathlib so we handle Windows backslashes correctly too
+          # (CI runs on Linux where this is moot, but local dry-runs
+          # shouldn't silently produce wrong paths either). as_posix()
+          # normalizes the separator to '/' so the generated Groovy
+          # file uses POSIX-style paths regardless of runner OS.
+          paths = {p['name']: (Path(p['manifest_path']).parent / 'android').as_posix()
+                   for p in meta.get('packages', [])
+                   if p['name'] in plugins}
+          missing = [n for n in plugins if n not in paths]
+          if missing:
+              print('FATAL: cargo metadata did not report: ' + ','.join(missing), file=sys.stderr)
+              sys.exit(1)
+          for name, d in paths.items():
+              if not os.path.isdir(d):
+                  print(f'FATAL: plugin Android dir does not exist: {d}', file=sys.stderr)
+                  sys.exit(1)
+              if not os.path.isfile(os.path.join(d, 'build.gradle.kts')):
+                  print(f'FATAL: {d}/build.gradle.kts missing -- plugin Android subproject not scaffolded', file=sys.stderr)
+                  sys.exit(1)
+          # Preserve init's emit order (tauri-android, then notification,
+          # then shell) so this file looks like what `tauri android init`
+          # would have written if --ci mode had generated it.
+          settings = "
+".join([
+              'include(":tauri-android")',
+              'include(":tauri-plugin-notification")',
+              'include(":tauri-plugin-shell")',
               'project(":tauri-android").projectDir = file("$rootDir/.tauri/tauri-api")',
-              src,
-          )
-          if new == src:
-              raise SystemExit("FATAL: could not find :tauri-android projectDir line in tauri.settings.gradle")
-          open(p, 'w').write(new)
+              f'project(":tauri-plugin-notification").projectDir = file("{paths["tauri-plugin-notification"]}")',
+              f'project(":tauri-plugin-shell").projectDir = file("{paths["tauri-plugin-shell"]}")',
+          ]) + "
+"
+          out_path = os.environ['SETTINGS_PATH']
+          with open(out_path, 'w') as f:
+              f.write(settings)
+          print(f'Wrote {out_path}')
           PYEOF
+          cd ..
 
           # NOTE: app/build.gradle.kts has `apply(from = "tauri.build.gradle.kts")`,
           # and `apply(from = ...)` is resolved relative to the calling script's
