@@ -1042,10 +1042,13 @@ jobs:
           # The widget restore step runs after `tauri android init --ci` wipes
           # gen/android; if its file list ever drifts from what's committed,
           # the APK silently ships without widget receivers. Fail the build
-          # loudly here instead (binary AndroidManifest still holds the class
-          # names as plain strings).
+          # loudly here. NOTE: the compiled AndroidManifest inside the APK is
+          # binary AXML, whose string pool encodes class names as UTF-16LE
+          # (bytes interleaved with NUL) — plain `strings` only sees 8-bit
+          # runs and misses them, so strip NULs before grepping.
+          MANIFEST=$(unzip -p "$APK" AndroidManifest.xml | tr -d '\000')
           for cls in UsageWidgetProviderSmall UsageWidgetProviderMedium UsageWidgetProviderLarge; do
-            if unzip -p "$APK" AndroidManifest.xml | strings | grep -q "$cls"; then
+            if echo "$MANIFEST" | grep -Fq "$cls"; then
               echo "OK: $cls present"
             else
               echo "FATAL: $cls missing from APK manifest — widget restore step is incomplete" >&2
