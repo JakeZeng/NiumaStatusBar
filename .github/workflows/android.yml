@@ -1,5 +1,9 @@
-name: Android APK
+﻿name: Android APK
 
+# 手动触发的 Android 构建管线。内容与 release.yml 的 android job 保持一致
+# （widget 恢复、assets 同步、tauri 插件子工程、签名、闪退修复、widget 产物断言），
+# 仅触发方式不同：本工作流只在手动 dispatch 时运行，不会自动发布到 Release；
+# tag 发布走 release.yml。修改本文件请同步修改 release.yml，反之亦然。
 on:
   workflow_dispatch:
 
@@ -7,6 +11,8 @@ jobs:
   android:
     runs-on: ubuntu-22.04
     timeout-minutes: 120
+    permissions:
+      contents: write
     env:
       GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx4g"
       ANDROID_SDK_ROOT: ${{ github.workspace }}/.android-sdk
@@ -152,12 +158,146 @@ jobs:
           # the flag in the generated file. MainActivity.kt doesn't
           # reference BuildConfig so this is safe.
           #
+          # ALSO: tauri-cli 2.11.x pins `proguard-android-optimize.txt`
+          # as the default proguard file, which enables R8's aggressive
+          # optimization pass (vertical method merging, etc). That pass
+          # sees `MainActivity.getId()` as a trivial override that just
+          # forwards to `super.getId()`, inlines it, and strips the
+          # declaration — even when we have `@Keep` + `-keep class { *; }`
+          # in our proguard-rules.pro. The stripped method makes
+          # `Rust.wryCreate`'s JNI call to `activity.getId()` fail with
+          # `NoSuchMethodError: Lcom/aimonitor/app/MainActivity;.getId()I`
+          # and the app crashes on launch. Switch to the non-optimize
+          # default (`proguard-android.txt`); the size/perf delta is
+          # tiny for our app and WRY's `proguard-wry.pro` already keeps
+          # the rest of the JNI surface.
+          #
+          # ALSO: tauri-cli 2.11.x's init template doesn't include any
+          # signing config — neither a `signingConfigs { ... }` block nor
+          # a `signingConfig = ...` line in the `release` buildType.
+          # Without it, the release APK is output as `*-unsigned.apk`
+          # even when `keystore.properties` is present. Re-add the
+          # signing logic below.
+          #
           # app/build.gradle.kts is NOT gitignored, but it IS regenerated
-          # by tauri-cli on every init, so this sed runs after init.
-          sed -i 's/buildConfig = true/buildConfig = false/' \
-              src-tauri/gen/android/app/build.gradle.kts
-          echo "--- app/build.gradle.kts (buildFeatures block) ---"
-          grep -A2 "buildFeatures" src-tauri/gen/android/app/build.gradle.kts || true
+          # by tauri-cli on every init, so this patch runs after init.
+          set -e
+          GRADLE_FILE=src-tauri/gen/android/app/build.gradle.kts
+          sed -i 's/buildConfig = true/buildConfig = false/' "$GRADLE_FILE"
+          # Switch the default proguard file from the optimize variant to
+          # the non-optimize variant. See block comment above for why.
+          if grep -q 'proguard-android-optimize.txt' "$GRADLE_FILE"; then
+            sed -i 's|proguard-android-optimize.txt|proguard-android.txt|' "$GRADLE_FILE"
+            echo "Patched $GRADLE_FILE: proguard-android-optimize.txt -> proguard-android.txt"
+          fi
+
+          # Re-add `signingConfigs` block after the `namespace = ...` line.
+          # The block reads `keystore.properties` from the app subproject's
+          # dir at gradle script-eval time; if the file is missing (no
+          # secret), the config is left empty and gradle keeps the default
+          # (unsigned) behavior, which is what we want for local-dev.
+          if ! grep -q '^val keystorePropertiesFile' "$GRADLE_FILE"; then
+            # NOTE: we use `Properties()` (unqualified), not `java.util.Properties()`.
+            # The file already has `import java.util.Properties` at the top, so the
+            # bare class name is in scope. The fully qualified form fails to resolve
+            # in the signingConfigs/AGP DSL-marker context — the compiler tries to
+            # look up `util` as a member of the surrounding `SigningConfig` receiver
+            # and reports "Unresolved reference: util" at `java.util.Properties()`.
+            sed -i '/^    namespace = /a\
+          \
+              signingConfigs {\
+                  create("release") {\
+                      val ks = file("keystore.properties")\
+                      if (ks.exists()) {\
+                          val p = Properties()\
+                          ks.inputStream().use { p.load(it) }\
+                          storeFile = file(p.getProperty("storeFile"))\
+                          storePassword = p.getProperty("storePassword")\
+                          keyAlias = p.getProperty("keyAlias")\
+                          keyPassword = p.getProperty("keyPassword")\
+                      }\
+                  }\
+              }' "$GRADLE_FILE"
+          fi
+
+          # Add `signingConfig = ...` line in the `release` buildType.
+          if ! grep -q 'signingConfig = signingConfigs.getByName("release")' "$GRADLE_FILE"; then
+            sed -i 's/^            isMinifyEnabled = true$/            isMinifyEnabled = false\n            signingConfig = signingConfigs.getByName("release")/' "$GRADLE_FILE"
+          fi
+
+          echo "--- app/build.gradle.kts (buildFeatures + signing blocks) ---"
+          grep -B1 -A15 'signingConfigs\|signingConfig' "$GRADLE_FILE" || true
+
+          # WRY v0.55.1 (`wry/src/android/mod.rs:117`, `binding.rs:277`) calls
+          # `activity.getId()` / `activity.setId(int)` by JNI name. WryActivity
+          # (wry/src/android/kotlin/WryActivity.kt:51) declares
+          # `var id: Int = 0` as a public FINAL property, so MainActivity
+          # inherits the accessors but does not redeclare them, and JNI's
+          # `GetMethodID` (which only walks the receiver class's declared
+          # methods, not the vtable) fails with
+          # `NoSuchMethodError: Lcom/aimonitor/app/MainActivity;.getId()I`,
+          # crashing the app on launch.
+          #
+          # Fix: (a) BuildTask.kt patches WryActivity.kt in place right
+          # after cargo build succeeds, turning `var id: Int = 0` into
+          # `open var id: Int = 0` so the next step can override it
+          # (the patch has to live in BuildTask, not a separate CI step,
+          # because WRY's build.rs only writes the file during cargo
+          # build, which itself runs *inside* `gradlew assembleRelease`);
+          # (b) MainActivity overrides `var id: Int = 0`, which gives the
+          # MainActivity class its own declared `getId()` / `setId(int)`
+          # methods for JNI to find. ProGuard rules in
+          # `src-tauri/gen/android/app/proguard-rules.pro` keep the
+          # accessors (without them R8 strips them as unused in release
+          # builds, reproducing the crash). Strip any leftover `fun getId()`
+          # from earlier CI attempts — those were a different (broken)
+          # approach that triggered kotlinc "Accidental override". Remove
+          # this whole step once we move off tauri 2.11.3 (which pins
+          # wry 0.55.1).
+          MAIN_ACTIVITY=src-tauri/gen/android/app/src/main/java/com/aimonitor/app/MainActivity.kt
+          if [ -f "$MAIN_ACTIVITY" ]; then
+            # 1. Drop any stale `fun getId(): Int = hashCode()` from prior
+            #    CI attempts so kotlinc doesn't choke on "Accidental override".
+            if grep -q 'fun getId' "$MAIN_ACTIVITY"; then
+              sed -i '/^  fun getId(): Int = hashCode()$/d' "$MAIN_ACTIVITY"
+            fi
+            # 2. Drop the stale property shadow from v0.1.10 — it triggers
+            #    kotlinc "'id' hides member of supertype 'TauriActivity' and
+            #    needs 'override' modifier" (Kotlin treats hide-parent-final
+            #    as an error, not a warning). BuildTask.kt turns the
+            #    parent property into `open` after cargo build, so we can
+            #    `override var id` legitimately.
+            if grep -q '^  @Suppress("NAME_SHADOWING")' "$MAIN_ACTIVITY"; then
+              sed -i '/^  @Suppress("NAME_SHADOWING")$/d' "$MAIN_ACTIVITY"
+            fi
+            if grep -q '^  var id: Int = 0$' "$MAIN_ACTIVITY"; then
+              sed -i '/^  var id: Int = 0$/d' "$MAIN_ACTIVITY"
+            fi
+            # 3. Inject `override var id: Int = 0`. The parent property
+            #    is patched to `open` by BuildTask.kt at cargo-build time;
+            #    by the time kotlinc runs, the parent is open and this
+            #    override compiles. The `@Keep` annotation tells R8 in
+            #    `proguard-android-optimize.txt` to preserve the
+            #    generated `getId()` / `setId(int)` methods on this
+            #    class's method table — without it, R8 may vertical-merge
+            #    MainActivity.getId() (which trivially forwards to
+            #    super.getId()) into its callers and then strip the
+            #    declaration, which makes JNI's `GetMethodID` on
+            #    `MainActivity` fail with NoSuchMethodError even though
+            #    `WryActivity.getId()` is correctly kept.
+            if ! grep -q '^  @Keep$' "$MAIN_ACTIVITY" \
+               && ! grep -q '^  override var id: Int = 0$' "$MAIN_ACTIVITY"; then
+              # Add the @Keep import (idempotent).
+              if ! grep -q 'import androidx.annotation.Keep' "$MAIN_ACTIVITY"; then
+                sed -i 's|^import android.os.Bundle$|&\nimport androidx.annotation.Keep|' "$MAIN_ACTIVITY"
+              fi
+              # Inject the @Keep-annotated property just before the
+              # class closing brace (`^}$` at 0 indent).
+              sed -i 's|^}$|  @Keep\n  override var id: Int = 0\n}|' "$MAIN_ACTIVITY"
+            fi
+            echo "--- MainActivity.kt (after WRY getId() override) ---"
+            cat "$MAIN_ACTIVITY"
+          fi
 
       - name: Ensure tauri.settings.gradle and tauri.build.gradle.kts exist
         run: |
@@ -167,9 +307,73 @@ jobs:
           # tauri-android is a Gradle subproject generated on first cargo build
           # (WRY build.rs writes the Kotlin source via WRY_ANDROID_KOTLIN_FILES_OUT_DIR).
           # tauri-cli 2.11.x doesn't create these wiring files in --ci mode, so we do.
-          cat > "$ROOT/tauri.settings.gradle" <<'EOF'
+          #
+          # IMPORTANT: `tauri android init --ci` does NOT generate
+          # `tauri.settings.gradle` in tauri-cli 2.11.x (only the non-ci
+          # variant does, and even then we'd need to rewrite :tauri-android's
+          # projectDir). We have to write the file from scratch, and it MUST
+          # include all three subprojects:
+          #   - :tauri-android              -> our scaffolded .tauri/tauri-api/
+          #   - :tauri-plugin-shell         -> cargo registry path
+          #   - :tauri-plugin-notification  -> cargo registry path
+          # If we drop the two plugins, Gradle never compiles
+          # :tauri-plugin-shell/android, the resulting APK has no
+          # app/tauri/shell/ShellPlugin.class in its dex, and WRY 0.55.1's
+          # WryActivity.getAppClass("shell") throws ClassNotFoundException
+          # at launch -> Rust panic -> app crashes (root cause of
+          # v0.1.27/v0.1.28 release flash-back on Xiaomi). The plugin
+          # Android dirs come from `cargo metadata` because the
+          # cargo-registry path varies per runner / OS / Rust version and
+          # MUST NOT be hard-coded.
+
+          # 1. Write a tiny Python helper that reads cargo metadata JSON on
+          # stdin and emits `NAME=path` lines on stdout for the two plugins.
+          # Keeping it as a standalone file (not an inline -c string) avoids
+          # YAML literal-block indentation pitfalls and shell-quoting pain.
+          cat > /tmp/get_plugin_dirs.py <<'PYEOF'
+          import json, sys
+          d = json.load(sys.stdin)
+          plugins = ("tauri-plugin-shell", "tauri-plugin-notification")
+          out = {p["name"]: p["manifest_path"].rsplit("/", 1)[0] + "/android"
+                 for p in d.get("packages", [])
+                 if p["name"] in plugins}
+          missing = [n for n in plugins if n not in out]
+          if missing:
+              print("FATAL: cargo metadata did not report: " + ",".join(missing), file=sys.stderr)
+              sys.exit(1)
+          for name, d in out.items():
+              print(name.upper().replace("-", "_") + "_DIR=" + d)
+          PYEOF
+
+          # 2. Run it, capture the NAME=path lines, eval into the shell.
+          cd src-tauri
+          PLUGIN_DIRS=$(cargo metadata --format-version=1 | python3 /tmp/get_plugin_dirs.py)
+          eval "$PLUGIN_DIRS"
+          cd ..
+          if [ -z "${TAURI_PLUGIN_SHELL_DIR:-}" ] || [ -z "${TAURI_PLUGIN_NOTIFICATION_DIR:-}" ]; then
+            echo "FATAL: cargo metadata did not yield plugin paths"
+            echo "PLUGIN_DIRS output was:"
+            echo "$PLUGIN_DIRS"
+            exit 1
+          fi
+
+          # 3. Validate the dirs exist + have build.gradle.kts.
+          for d in "$TAURI_PLUGIN_SHELL_DIR" "$TAURI_PLUGIN_NOTIFICATION_DIR"; do
+            if [ ! -d "$d" ]; then echo "FATAL: $d does not exist"; exit 1; fi
+            if [ ! -f "$d/build.gradle.kts" ]; then echo "FATAL: $d/build.gradle.kts missing"; exit 1; fi
+          done
+
+          # 4. Write tauri.settings.gradle. Unquoted heredoc (`<<EOF`, not
+          # `<<'EOF'`) so $NOTIF_DIR / $SHELL_DIR expand, but escape
+          # $rootDir as \$rootDir so the Groovy DSL preserves it (it's a
+          # Gradle-injected project layout variable, NOT a shell var).
+          cat > "$ROOT/tauri.settings.gradle" <<EOF
           include(":tauri-android")
-          project(":tauri-android").projectDir = file("$rootDir/.tauri/tauri-api")
+          include(":tauri-plugin-notification")
+          include(":tauri-plugin-shell")
+          project(":tauri-android").projectDir = file("\$rootDir/.tauri/tauri-api")
+          project(":tauri-plugin-notification").projectDir = file("$TAURI_PLUGIN_NOTIFICATION_DIR")
+          project(":tauri-plugin-shell").projectDir = file("$TAURI_PLUGIN_SHELL_DIR")
           EOF
 
           # NOTE: app/build.gradle.kts has `apply(from = "tauri.build.gradle.kts")`,
@@ -177,17 +381,24 @@ jobs:
           # directory (app/), so the file MUST live at $ROOT/app/, not $ROOT/.
           # ALSO: the apply is OUTSIDE the `dependencies { }` block in app/build.gradle.kts
           # (line 91 vs the block closing on line 89), so this file is compiled as
-          # a standalone script — `implementation` (which lives on the
+          # a standalone script -- `implementation` (which lives on the
           # DependencyHandler receiver) is unresolved at script-compile time.
           # The fix is the same as what tauri-build's `generate_gradle_files`
           # does (see crates/tauri-build/src/mobile.rs in the tauri repo):
           # bring `implementation` into scope as a top-level val by
           # delegating to the `configurations` container, then use it inside
           # `dependencies { }` as if it were a method.
+          #
+          # The implementation list must include ALL three subprojects that
+          # tauri.settings.gradle references -- see the long comment block
+          # above for why. Dropping :tauri-plugin-shell from here breaks the
+          # APK the same way dropping it from tauri.settings.gradle does.
           cat > "$ROOT/app/tauri.build.gradle.kts" <<'EOF'
           val implementation by configurations
           dependencies {
               implementation(project(":tauri-android"))
+              implementation(project(":tauri-plugin-shell"))
+              implementation(project(":tauri-plugin-notification"))
           }
           EOF
 
@@ -352,7 +563,7 @@ jobs:
               implementation("com.fasterxml.jackson.core:jackson-core:2.15.3")
               implementation("com.fasterxml.jackson.core:jackson-annotations:2.15.3")
               testImplementation("junit:junit:4.13.2")
-              androidTestImplementation("androidx.test.ext:junit:1.1.5")
+              androidTestImplementation("androidx.test.ext:junit:1.11.5")
               androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
           }
           EOF
@@ -524,15 +735,55 @@ jobs:
                           "Last 200 cargo log lines:\n${tail.joinToString("\n")}")
                   }
 
-                  // Copy the built .so into the Android project for APK packaging.
-                  val cargoToml = File(cargoRoot, "Cargo.toml")
-                  val soName = if (cargoToml.exists()) {
-                      val tomlText = cargoToml.readText()
-                      val nameMatch = Regex("""name\s*=\s*"([^"]+)"""").find(tomlText)
-                      "lib${nameMatch?.groupValues?.get(1) ?: "app"}.so"
-                  } else {
-                      "libapp.so"
+                  // Patch WryActivity.kt to make `var id` open. WRY 0.55.1's
+                  // WryActivity (wry/src/android/kotlin/WryActivity.kt:51)
+                  // declares `var id: Int = 0` as a public FINAL property.
+                  // The JNI code (wry/src/android/mod.rs:117, binding.rs:277)
+                  // calls activity.getId()/setId(int) by name, but JNI's
+                  // GetMethodID only walks the receiver class's declared
+                  // methods (no vtable lookup) — and MainActivity doesn't
+                  // redeclare the property on its own, so the JNI lookup
+                  // fails with `NoSuchMethodError: MainActivity.getId()I` and
+                  // the app crashes on launch.
+                  //
+                  // MainActivity.kt gets an `override var id: Int = 0`
+                  // injected in an earlier CI step; for that to compile,
+                  // WryActivity's `var id` must be `open`. The WRY build.rs
+                  // just wrote WryActivity.kt into $tauriApiJava above, so
+                  // patch it in place. We do it from inside BuildTask (not a
+                  // separate CI step) because the file is only created by
+                  // WRY's build.rs during this cargo build, and a separate
+                  // step would run before the file exists.
+                  val wryActivityKt = File(tauriApiJava, "WryActivity.kt")
+                  if (!wryActivityKt.exists()) {
+                      throw GradleException("WryActivity.kt not found at ${wryActivityKt.absolutePath} after cargo build — WRY's build.rs did not write the Kotlin source")
                   }
+                  val wryContent = wryActivityKt.readText()
+                  if (!wryContent.contains("    open var id: Int = 0")) {
+                      val patched = wryContent.replace("    var id: Int = 0", "    open var id: Int = 0")
+                      if (patched == wryContent) {
+                          throw GradleException("WryActivity.kt at ${wryActivityKt.absolutePath} does not contain the expected `    var id: Int = 0` line; WRY bumped past 0.55.1 and the workaround needs to be revisited")
+                      }
+                      wryActivityKt.writeText(patched)
+                      project.logger.lifecycle("Patched ${wryActivityKt.absolutePath}: `var id` -> `open var id`")
+                  }
+
+                  // Copy the built .so into the Android project for APK packaging.
+                  // We pick the source .so via a glob in `target/<triple>/<profile>/`
+                  // (cargo produces `lib<[lib].name>.so` for cdylib crates — e.g.
+                  // `libai_model_monitor_lib.so` for `[lib] name = "ai_model_monitor_lib"`).
+                  // Don't try to derive the filename from `[package].name`: that's
+                  // a different name (often hyphenated), and the .so Java side
+                  // loads by the `[lib]` name. Using the wrong name here leaves
+                  // jniLibs/<abi>/ with a file the loader can't find, and the
+                  // app crashes on launch with `dlopen failed: library
+                  // "lib<lib.name>.so" not found`.
+                  val targetDir = File(cargoRoot, "target/$targetTriple/$profile")
+                  val candidates = targetDir.listFiles()?.filter {
+                      it.name.endsWith(".so") && it.name.startsWith("lib")
+                  } ?: emptyList()
+                  val srcFinal = candidates.firstOrNull()
+                      ?: throw GradleException("Built .so not found in $targetDir (candidates: $candidates)")
                   val abi = when (targetTriple) {
                       "aarch64-linux-android" -> "arm64-v8a"
                       "armv7-linux-androideabi" -> "armeabi-v7a"
@@ -540,23 +791,9 @@ jobs:
                       "x86_64-linux-android" -> "x86_64"
                       else -> targetTriple
                   }
-                  val targetDir = File(cargoRoot, "target/$targetTriple/$profile")
-                  val srcSo = File(targetDir, soName)
-                  val fallback = File(targetDir, "libapp.so")
-                  val candidates = targetDir.listFiles()?.filter {
-                      it.name.endsWith(".so") && it.name.startsWith("lib")
-                  } ?: emptyList()
-                  val srcFinal = when {
-                      srcSo.exists() -> srcSo
-                      fallback.exists() -> fallback
-                      candidates.isNotEmpty() -> candidates.first().also {
-                          project.logger.lifecycle("Found .so via glob: $it")
-                      }
-                      else -> throw GradleException("Built .so not found in $targetDir (tried: $soName, libapp.so, candidates: $candidates)")
-                  }
                   val dstDir = File(project.projectDir, "src/main/jniLibs/$abi")
                   if (!dstDir.exists()) dstDir.mkdirs()
-                  val dstSo = File(dstDir, soName)
+                  val dstSo = File(dstDir, srcFinal.name)
                   srcFinal.copyTo(dstSo, overwrite = true)
                   project.logger.lifecycle("Copied $srcFinal -> $dstSo")
               }
@@ -568,10 +805,106 @@ jobs:
           echo "--- patched BuildTask.kt (first 20 lines) ---"
           head -20 "$BUILDTASK"
 
+      - name: Restore home-screen widget (AppWidget) sources after init
+        run: |
+          set -e
+          ROOT=src-tauri/gen/android
+          # `tauri android init --ci` runs after `rm -rf gen/android`, so every
+          # file committed under gen/android is wiped and only the Tauri template
+          # is regenerated. The home-screen AppWidget sources (widget Kotlin
+          # package, widget_* layouts/drawables/values/xml, the manifest
+          # <receiver>/<service> entries, proguard keep rule, and the
+          # MainActivity click-through handling) are NOT part of that template,
+          # so restore them from the tagged commit.
+          git checkout HEAD -- \
+            "$ROOT/app/src/main/java/com/aimonitor/app/widget" \
+            "$ROOT/app/src/main/res/xml/widget_provider_info_small.xml" \
+            "$ROOT/app/src/main/res/xml/widget_provider_info_medium.xml" \
+            "$ROOT/app/src/main/res/xml/widget_provider_info_large.xml" \
+            "$ROOT/app/src/main/res/layout/widget_small.xml" \
+            "$ROOT/app/src/main/res/layout/widget_medium.xml" \
+            "$ROOT/app/src/main/res/layout/widget_large.xml" \
+            "$ROOT/app/src/main/res/layout/widget_large_list_item.xml" \
+            "$ROOT/app/src/main/res/layout/widget_loading.xml" \
+            "$ROOT/app/src/main/res/drawable/widget_background.xml" \
+            "$ROOT/app/src/main/res/drawable/widget_progress_fill.xml" \
+            "$ROOT/app/src/main/res/drawable/widget_progress_track.xml" \
+            "$ROOT/app/src/main/res/drawable/widget_refresh_button.xml" \
+            "$ROOT/app/src/main/res/drawable/widget_status_dot.xml" \
+            "$ROOT/app/src/main/res/drawable/widget_status_dot_disabled.xml" \
+            "$ROOT/app/src/main/res/drawable/widget_status_dot_error.xml" \
+            "$ROOT/app/src/main/res/values/widget_colors.xml" \
+            "$ROOT/app/src/main/res/values/widget_strings.xml" \
+            "$ROOT/app/src/main/res/values-night/widget_colors.xml" \
+            "$ROOT/app/src/main/res/values-zh/widget_strings.xml" \
+            "$ROOT/app/src/main/AndroidManifest.xml" \
+            "$ROOT/app/proguard-rules.pro"
+
+          # MainActivity.kt carries the widget click-through intent handling.
+          # Restore our version, then RE-APPLY the WRY 0.55.1 `@Keep override
+          # var id` injection (the earlier MainActivity sed step ran against
+          # the init-generated template, which this checkout just replaced).
+          MAIN_ACTIVITY="$ROOT/app/src/main/java/com/aimonitor/app/MainActivity.kt"
+          git checkout HEAD -- "$MAIN_ACTIVITY"
+          if ! grep -q '^  override var id: Int = 0$' "$MAIN_ACTIVITY"; then
+            if ! grep -q 'import androidx.annotation.Keep' "$MAIN_ACTIVITY"; then
+              sed -i 's|^import android.os.Bundle$|&\nimport androidx.annotation.Keep|' "$MAIN_ACTIVITY"
+            fi
+            sed -i 's|^}$|  @Keep\n  override var id: Int = 0\n}|' "$MAIN_ACTIVITY"
+          fi
+
+          echo "--- widget sources restored ---"
+          find "$ROOT/app/src/main/java/com/aimonitor/app/widget" -type f | sort
+          echo "manifest receiver count: $(grep -c 'UsageWidgetProvider' "$ROOT/app/src/main/AndroidManifest.xml")"
+
       - name: Make gradlew executable
         run: |
           chmod +x src-tauri/gen/android/gradlew || true
           chmod +x src-tauri/gen/android/gradlew.bat || true
+
+      # Decode the upload keystore from secrets and write keystore.properties
+      # for gradle to pick up. Skipped entirely if the secret is unset, in
+      # which case the APK is unsigned (only useful for local dev).
+      # NOTE: `secrets.*` cannot be referenced in `if:` (GitHub Actions
+      # blocks it to avoid leaking secret existence), so we always run
+      # this step and bail out early inside the script when the secret
+      # is missing.
+      - name: Configure Android signing
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -e
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "ANDROID_KEYSTORE_BASE64 is empty — skipping signing (APK will be unsigned)"
+            exit 0
+          fi
+          KEYSTORE_FILE="$GITHUB_WORKSPACE/release.keystore"
+          echo "$KEYSTORE_B64" | base64 -d > "$KEYSTORE_FILE"
+          chmod 600 "$KEYSTORE_FILE"
+          ls -la "$KEYSTORE_FILE"
+          # app/build.gradle.kts reads `file("keystore.properties")` relative
+          # to the gradle project dir (gen/android/app/), and the storeFile
+          # path inside is also resolved relative to that dir — so we use an
+          # absolute path here to keep the keystore out of the (committed)
+          # gen/android/ tree.
+          cat > src-tauri/gen/android/app/keystore.properties <<EOF
+          storeFile=$KEYSTORE_FILE
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          EOF
+          echo "--- keystore.properties ---"
+          cat src-tauri/gen/android/app/keystore.properties
+          # Smoke-test the keystore so we fail fast with a clear error if
+          # the alias/password don't match (otherwise gradle fails inside
+          # packageRelease with a much more cryptic "Failed to read key" msg).
+          keytool -list -v -keystore "$KEYSTORE_FILE" \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -alias "$KEY_ALIAS" > /dev/null
+          echo "Keystore OK"
 
       - name: Build Android APK
         run: |
@@ -582,6 +915,18 @@ jobs:
           export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$PATH"
 
           cd src-tauri
+
+          # 同步前端构建产物到安卓 assets。
+          # CI 绕过 `tauri android build` 直接用 `gradlew assembleRelease`，
+          # 而 tauri-cli 把 frontendDist 拷贝进 app/src/main/assets/ 的步骤
+          # 被跳过了，导致 APK 没有 index.html —— WebView 加载失败、
+          # 打开即闪退 (v0.1.26 实测 assets 仅含 tauri.conf.json + dexopt)。
+          # 手动把仓库根的 dist/ 同步进 assets（保留 init 生成的 tauri.conf.json）。
+          echo "Syncing frontend dist -> android assets"
+          find gen/android/app/src/main/assets -mindepth 1 ! -name 'tauri.conf.json' -delete 2>/dev/null || true
+          cp -r ../dist/. gen/android/app/src/main/assets/
+          echo "--- assets after sync ---"
+          ls -la gen/android/app/src/main/assets/ | head
 
           echo "Starting Android APK build..."
           # Use `assembleRelease` (not per-flavor task like `assembleArm64Release`).
@@ -601,8 +946,28 @@ jobs:
 
           exit $GRADLE_EXIT
 
-      - name: Upload APK (release)
+      - name: Verify home-screen widget receivers are in the APK
         if: success()
+        run: |
+          set -e
+          APK=$(ls src-tauri/gen/android/app/build/outputs/apk/arm64/release/*.apk | head -1)
+          echo "Checking $APK for AppWidget receivers..."
+          # The widget restore step runs after `tauri android init --ci` wipes
+          # gen/android; if its file list ever drifts from what's committed,
+          # the APK silently ships without widget receivers. Fail the build
+          # loudly here instead (binary AndroidManifest still holds the class
+          # names as plain strings).
+          for cls in UsageWidgetProviderSmall UsageWidgetProviderMedium UsageWidgetProviderLarge; do
+            if unzip -p "$APK" AndroidManifest.xml | strings | grep -q "$cls"; then
+              echo "OK: $cls present"
+            else
+              echo "FATAL: $cls missing from APK manifest — widget restore step is incomplete" >&2
+              exit 1
+            fi
+          done
+
+      - name: Upload APK as workflow artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: android-apk-release
@@ -614,17 +979,18 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: build-log
+          name: android-build-log
           path: src-tauri/build.log
           retention-days: 7
 
-      - name: Create GitHub Release (draft)
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Append APK to GitHub release
+        if: startsWith(github.ref, 'refs/tags/') && success()
         uses: softprops/action-gh-release@v2
         with:
-          name: ${{ github.ref_name }}
-          draft: true
-          generate_release_notes: true
+          # Don't set `name`/`body` here — tauri-action in the `publish` job
+          # owns the release name/body. We only want to add the arm64 APK to
+          # the existing release (softprops is idempotent on the tag).
+          tag_name: ${{ github.ref_name }}
           files: src-tauri/gen/android/app/build/outputs/apk/arm64/release/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

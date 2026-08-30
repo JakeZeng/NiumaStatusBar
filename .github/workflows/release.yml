@@ -1033,6 +1033,26 @@ jobs:
 
           exit $GRADLE_EXIT
 
+      - name: Verify home-screen widget receivers are in the APK
+        if: success()
+        run: |
+          set -e
+          APK=$(ls src-tauri/gen/android/app/build/outputs/apk/arm64/release/*.apk | head -1)
+          echo "Checking $APK for AppWidget receivers..."
+          # The widget restore step runs after `tauri android init --ci` wipes
+          # gen/android; if its file list ever drifts from what's committed,
+          # the APK silently ships without widget receivers. Fail the build
+          # loudly here instead (binary AndroidManifest still holds the class
+          # names as plain strings).
+          for cls in UsageWidgetProviderSmall UsageWidgetProviderMedium UsageWidgetProviderLarge; do
+            if unzip -p "$APK" AndroidManifest.xml | strings | grep -q "$cls"; then
+              echo "OK: $cls present"
+            else
+              echo "FATAL: $cls missing from APK manifest — widget restore step is incomplete" >&2
+              exit 1
+            fi
+          done
+
       - name: Upload APK as workflow artifact
         if: always()
         uses: actions/upload-artifact@v4
