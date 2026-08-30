@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart, Line } from 'recharts';
@@ -29,12 +29,20 @@ export function HistoryChart({ providerId, providerName, providerType, refreshIn
   const [range, setRange] = useState<TimeRange>('24h');
   const [rangeOpen, setRangeOpen] = useState(false);
 
+  // 把 providerId/range 用 ref 缓存，避免 loadHistory 引用每次都变导致周期性 setInterval 被反复重置
+  const providerIdRef = useRef(providerId);
+  const rangeRef = useRef(range);
+  useEffect(() => { providerIdRef.current = providerId; }, [providerId]);
+  useEffect(() => { rangeRef.current = range; }, [range]);
+
   const loadHistory = useCallback(async () => {
+    const pid = providerIdRef.current;
+    const r = rangeRef.current;
     try {
-      const rangeConfig = TIME_RANGES.find(r => r.key === range)!;
+      const rangeConfig = TIME_RANGES.find(x => x.key === r)!;
       const since = Math.floor(Date.now() / 1000) - rangeConfig.seconds;
       const history = await invoke<UsageStatus[]>('get_usage_history', {
-        providerId,
+        providerId: pid,
         limit: 200,
         since,
       });
@@ -43,19 +51,21 @@ export function HistoryChart({ providerId, providerName, providerType, refreshIn
     } catch (err) {
       console.error('Failed to load history:', err);
     }
-  }, [providerId, range]);
+  }, []);
 
   // 切换供应商或时间范围时立即刷新一次
   useEffect(() => {
+    setData([]); // 切换时立即清空，避免短暂显示旧 provider 的曲线
     loadHistory();
-  }, [loadHistory]);
+  }, [providerId, range, loadHistory]);
 
   // 随刷新频率自动跳动：按 refreshInterval 周期性重新拉取
+  // refreshInterval 变化时整个 effect 重跑（重置 timer），但 loadHistory 引用稳定
   useEffect(() => {
     if (!refreshInterval || refreshInterval < 10) return;
     const id = setInterval(() => loadHistory(), refreshInterval * 1000);
     return () => clearInterval(id);
-  }, [loadHistory, refreshInterval]);
+  }, [refreshInterval, loadHistory]);
 
   const formatTime = (ts: number) => {
     const d = new Date(ts * 1000);

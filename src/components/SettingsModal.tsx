@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, Minimize2, LogOut, HelpCircle, Eye, Power } from 'lucide-react';
 import { api } from '../api';
 import { ModalBackdrop } from './ModalBackdrop';
+import { isDesktop } from '../lib/device';
 
 interface Props {
   open: boolean;
@@ -16,7 +17,7 @@ type CloseAction = 'minimize_to_tray' | 'exit' | 'ask';
  * - 软件信息（关于）
  * - 后台托管：关闭行为 / 托盘图标可见 / 开机自启
  */
-export function SettingsModal({ open, onDismiss }: Props) {
+export const SettingsModal = memo(function SettingsModal({ open, onDismiss }: Props) {
   const { t } = useTranslation();
   const [closeAction, setCloseActionState] = useState<CloseAction>('ask');
   const [trayVisible, setTrayVisibleState] = useState(true);
@@ -27,7 +28,11 @@ export function SettingsModal({ open, onDismiss }: Props) {
     (async () => {
       try {
         const ca = await api.getCloseAction();
-        setCloseActionState((ca as CloseAction) ?? 'ask');
+        if (ca === 'minimize_to_tray' || ca === 'exit') {
+          setCloseActionState(ca);
+        } else {
+          setCloseActionState('ask');
+        }
       } catch { /* ignore */ }
       try {
         setTrayVisibleState(await api.getTrayVisible());
@@ -148,28 +153,32 @@ export function SettingsModal({ open, onDismiss }: Props) {
             </div>
           </div>
 
-          {/* 托盘图标可见 */}
-          <ToggleRow
-            icon={<Eye className="w-4 h-4 text-[var(--color-primary)]" />}
-            label={t('settings.trayVisible')}
-            hint={t('settings.trayVisibleHint')}
-            checked={trayVisible}
-            onChange={changeTray}
-          />
+          {/* 托盘图标可见 — 仅桌面端 */}
+          {isDesktop() && (
+            <ToggleRow
+              icon={<Eye className="w-4 h-4 text-[var(--color-primary)]" />}
+              label={t('settings.trayVisible')}
+              hint={t('settings.trayVisibleHint')}
+              checked={trayVisible}
+              onChange={changeTray}
+            />
+          )}
 
-          {/* 开机自启 */}
-          <ToggleRow
-            icon={<Power className="w-4 h-4 text-[var(--color-primary)]" />}
-            label={t('settings.autostart')}
-            hint={t('settings.autostartHint')}
-            checked={autostart}
-            onChange={changeAutostart}
-          />
+          {/* 开机自启 — 仅桌面端 */}
+          {isDesktop() && (
+            <ToggleRow
+              icon={<Power className="w-4 h-4 text-[var(--color-primary)]" />}
+              label={t('settings.autostart')}
+              hint={t('settings.autostartHint')}
+              checked={autostart}
+              onChange={changeAutostart}
+            />
+          )}
         </section>
       </div>
     </ModalBackdrop>
   );
-}
+});
 
 function CloseActionOption({
   active,

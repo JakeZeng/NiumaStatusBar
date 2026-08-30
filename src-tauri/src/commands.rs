@@ -11,6 +11,11 @@ pub const CLOSE_ACTION_KEY: &str = "close_action";
 /// settings 表里保存当前 App 主题的 key（cyberpunk / wuxia / guoman）。
 /// Android 桌面组件进程不加载 WebView，直接读这张表给 widget 配色。
 pub const APP_THEME_KEY: &str = "app_theme";
+/// settings 表里保存"托盘图标是否可见"的 key（"1" / "0"）。
+/// 默认值由前端在 settings 表无记录时假设为 true（参见 get_tray_visible）。
+pub const TRAY_VISIBLE_KEY: &str = "tray_visible";
+/// settings 表里保存"开机自启"偏好的 key（"1" / "0"）。仅桌面端有意义。
+pub const AUTOSTART_KEY: &str = "autostart";
 
 /// 关闭行为偏好的内存缓存类型（由 lib.rs 注入），供 `on_window_event` 同步读取
 pub type CloseActionCache = Arc<std::sync::RwLock<Option<String>>>;
@@ -410,6 +415,187 @@ pub async fn app_quit(
     log_command_entry(&logger, "app_quit", None);
     app.exit(0);
     Ok(())
+}
+
+// ============ 托盘可见性 / 开机自启 ============
+//
+// 桌面端实现：偏好持久化到 settings 表 + 同步操作系统层。
+// 移动端（Android/iOS）保留同名命令签名（前端 `isDesktopPlatform()` 已加，
+// 但也提供 stub 实现保证后端 invoke_handler 列表在所有平台都有效）。
+//
+// `tray_visible` 通过全局静态 RwLock 缓存避免每次读取都打 SQLite。
+// `autostart` 在 Windows 上操作 HKCU\Software\Microsoft\Windows\CurrentVersion\Run，
+// Linux/macOS 仅持久化偏好（避免引入 platform-specific crate）。
+
+#[cfg(desktop)]
+mod tray_autostart_impl {
+    use super::{Database, AUTOSTART_KEY, TRAY_VISIBLE_KEY};
+    use std::sync::{OnceLock, RwLock};
+
+    // 进程级缓存：OnceLock + RwLock<Option<bool>> 表达"未初始化 / 缓存值"
+    #[allow(dead_code)] // 通过 cache() 函数间接被外部命令引用
+    static TRAY_VISIBLE_CACHE: OnceLock<RwLock<Option<bool>>> = OnceLock::new();
+    #[allow(dead_code)]
+    static AUTOSTART_CACHE: OnceLock<RwLock<Option<bool>>> = OnceLock::new();
+
+    pub(super) fn tray_visible_cache() -> &'static RwLock<Option<bool>> {
+        TRAY_VISIBLE_CACHE.get_or_init(|| RwLock::new(None))
+    }
+    pub(super) fn autostart_cache() -> &'static RwLock<Option<bool>> {
+        AUTOSTART_CACHE.get_or_init(|| RwLock::new(None))
+    }
+
+    pub(super) fn read_tray_visible(db: &Database) -> Result<bool, String> {
+        if let Some(guard) = tray_visible_cache().read().ok() {
+            if let Some(v) = *guard {
+                return Ok(v);
+            }
+        }
+        let raw = db.get_setting(TRAY_VISIBLE_KEY).map_err(|e| e.to_string())?;
+        let v = match raw.as_deref() {
+            Some("0") => false,
+            _ => true, // None 或 "1" 都视为可见
+        };
+        if let Ok(mut guard) = tray_visible_cache().write() {
+            *guard = Some(v);
+        }
+        Ok(v)
+    }
+
+    pub(super) fn read_autostart(db: &Database) -> Result<bool, String> {
+        if let Some(guard) = autostart_cache().read().ok() {
+            if let Some(v) = *guard {
+                return Ok(v);
+            }
+        }
+        let raw = db.get_setting(AUTOSTART_KEY).map_err(|e| e.to_string())?;
+        let v = matches!(raw.as_deref(), Some("1"));
+        if let Ok(mut guard) = autostart_cache().write() {
+            *guard = Some(v);
+        }
+        Ok(v)
+    }
+}
+
+#[tauri::command]
+pub async fn get_tray_visible(
+    db: State<'_, Arc<Database>>,
+) -> Result<bool, String> {
+    // 桌面端读偏好；移动端直接返回 true（tray 不可用时该值无意义）
+    #[cfg(desktop)]
+    { tray_autostart_impl::read_tray_visible(&db) }
+    #[cfg(not(desktop))]
+    { let _ = db; Ok(true) }
+}
+
+#[tauri::command]
+pub async fn set_tray_visible(
+    visible: bool,
+    db: State<'_, Arc<Database>>,
+    app: AppHandle,
+    logger: State<'_, Arc<AppLogger>>,
+) -> Result<(), String> {
+    log_command_entry(
+        &logger,
+        "set_tray_visible",
+        Some(serde_json::json!({ "visible": visible })),
+    );
+    let raw = if visible { "1" } else { "0" };
+    db.set_setting(TRAY_VISIBLE_KEY, raw)
+        .map_err(|e| log_command_error(&logger, "set_tray_visible", e, None))?;
+    #[cfg(desktop)]
+    if let Ok(mut guard) = tray_autostart_impl::tray_visible_cache().write() {
+        *guard = Some(visible);
+    }
+    #[cfg(desktop)]
+    crate::tray::apply_tray_visibility(&app, visible);
+    #[cfg(not(desktop))]
+    { let _ = (&app, visible); }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_autostart(
+    db: State<'_, Arc<Database>>,
+) -> Result<bool, String> {
+    #[cfg(desktop)]
+    { tray_autostart_impl::read_autostart(&db) }
+    #[cfg(not(desktop))]
+    { let _ = db; Ok(false) }
+}
+
+#[tauri::command]
+pub async fn set_autostart(
+    enabled: bool,
+    db: State<'_, Arc<Database>>,
+    _app: AppHandle,
+    logger: State<'_, Arc<AppLogger>>,
+) -> Result<(), String> {
+    log_command_entry(
+        &logger,
+        "set_autostart",
+        Some(serde_json::json!({ "enabled": enabled })),
+    );
+    let raw = if enabled { "1" } else { "0" };
+    db.set_setting(AUTOSTART_KEY, raw)
+        .map_err(|e| log_command_error(&logger, "set_autostart", e, None))?;
+    #[cfg(desktop)]
+    if let Ok(mut guard) = tray_autostart_impl::autostart_cache().write() {
+        *guard = Some(enabled);
+    }
+    // Windows：同步操作注册表
+    #[cfg(all(desktop, target_os = "windows"))]
+    {
+        apply_windows_autostart(enabled).map_err(|e| {
+            log_command_error(&logger, "set_autostart", &e, None)
+        })?;
+    }
+    // Linux/macOS：偏好已持久化，应用启动时由安装包/desktop 文件决定
+    let _ = (_app, enabled);
+    Ok(())
+}
+
+#[cfg(all(desktop, target_os = "windows"))]
+fn apply_windows_autostart(enabled: bool) -> Result<(), String> {
+    use std::process::Command;
+    // 用 reg.exe 读写 HKCU，避免引入 winreg 依赖（构建矩阵更轻）
+    // Run 键值名：固定为 exe 文件名（不含扩展名），保证可被后续 reg delete 命中
+    let exe = std::env::current_exe()
+        .map_err(|e| format!("current_exe: {}", e))?;
+    let value_name = exe
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("ai-model-monitor")
+        .to_string();
+    let exe_str = exe.to_string_lossy().to_string();
+    let key = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
+    let output = if enabled {
+        Command::new("reg")
+            .args(["add", key, "/v", &value_name, "/t", "REG_SZ", "/d", &exe_str, "/f"])
+            .output()
+    } else {
+        Command::new("reg")
+            .args(["delete", key, "/v", &value_name, "/f"])
+            .output()
+    };
+    match output {
+        Ok(o) if o.status.success() => Ok(()),
+        Ok(o) => {
+            // reg delete 在 key 不存在时返回非零，禁用时容忍这种情况
+            if !enabled {
+                let stderr = String::from_utf8_lossy(&o.stderr).to_string();
+                if stderr.contains("unable to find") {
+                    return Ok(());
+                }
+            }
+            Err(format!(
+                "reg {}: {}",
+                if enabled { "add" } else { "delete" },
+                String::from_utf8_lossy(&o.stderr).trim()
+            ))
+        }
+        Err(e) => Err(format!("spawn reg: {}", e)),
+    }
 }
 
 // ============ 主题偏好（供 Android 桌面组件读取） ============

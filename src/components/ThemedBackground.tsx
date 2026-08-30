@@ -1,4 +1,6 @@
+import { useMemo } from 'react';
 import { THEMES, type ThemeId } from '../themes/ThemeManager';
+import { isCoarsePointer } from '../lib/device';
 
 interface Props {
   theme: ThemeId;
@@ -6,23 +8,30 @@ interface Props {
 
 export function ThemedBackground({ theme }: Props) {
   const config = THEMES[theme];
+  // 触屏设备（手机/平板/折叠屏）上彻底关掉持续动画（guoman 花瓣/cyberpunk 扫描线+脉冲），
+  // 显著降低 GPU 合成开销。静态 SVG 山脉 / 纯色背景保留，桌面端不变。
+  const disableAnim = useMemo(() => isCoarsePointer(), []);
 
   return (
     <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-      <div className="absolute inset-0 bg-gradient-to-br 
+      <div className="absolute inset-0 bg-gradient-to-br
                       from-[var(--bg-primary)] to-[var(--bg-secondary)]" />
 
-      {config.backgroundPattern === 'grid' && <CyberpunkGrid />}
+      {config.backgroundPattern === 'grid' && (
+        <CyberpunkGrid animated={!disableAnim} />
+      )}
       {config.backgroundPattern === 'mountains' && <WuxiaMountains />}
-      {config.backgroundPattern === 'clouds' && <GuomanClouds />}
+      {config.backgroundPattern === 'clouds' && (
+        <GuomanClouds animated={!disableAnim} />
+      )}
     </div>
   );
 }
 
-function CyberpunkGrid() {
+function CyberpunkGrid({ animated }: { animated: boolean }) {
   return (
     <>
-      <div className="absolute inset-0" 
+      <div className="absolute inset-0"
         style={{
           backgroundImage: `
             linear-gradient(var(--grid-line) 1px, transparent 1px),
@@ -31,13 +40,25 @@ function CyberpunkGrid() {
           backgroundSize: '40px 40px',
         }}
       />
-      <div className="absolute inset-0 
-                      bg-gradient-to-b from-transparent via-[var(--scan-line)] to-transparent
-                      bg-[length:100%_4px] animate-scan" />
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 
-                      bg-[var(--color-primary)]/10 rounded-full blur-3xl animate-pulse" />
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 
-                      bg-[var(--color-secondary)]/10 rounded-full blur-3xl animate-pulse" />
+      {animated && (
+        <>
+          <div className="absolute inset-0
+                          bg-gradient-to-b from-transparent via-[var(--scan-line)] to-transparent
+                          bg-[length:100%_4px] animate-scan" />
+          <div className="absolute top-1/4 left-1/4 w-96 h-96
+                          bg-[var(--color-primary)]/10 rounded-full blur-3xl animate-pulse" />
+          <div className="absolute bottom-1/4 right-1/4 w-96 h-96
+                          bg-[var(--color-secondary)]/10 rounded-full blur-3xl animate-pulse" />
+        </>
+      )}
+      {!animated && (
+        <>
+          <div className="absolute top-1/4 left-1/4 w-96 h-96
+                          bg-[var(--color-primary)]/8 rounded-full blur-3xl" />
+          <div className="absolute bottom-1/4 right-1/4 w-96 h-96
+                          bg-[var(--color-secondary)]/8 rounded-full blur-3xl" />
+        </>
+      )}
     </>
   );
 }
@@ -58,19 +79,19 @@ function WuxiaMountains() {
   );
 }
 
-function GuomanClouds() {
+function GuomanClouds({ animated }: { animated: boolean }) {
   return (
     <>
-      <div className="absolute top-10 left-10 w-32 h-16 
-                      bg-white/30 rounded-full blur-2xl animate-float" />
-      <div className="absolute top-32 right-20 w-40 h-20 
-                      bg-[var(--color-primary)]/20 rounded-full blur-2xl 
-                      animate-float" />
-      <div className="absolute top-1/2 left-1/3 w-48 h-24 
-                      bg-[var(--color-secondary)]/15 rounded-full blur-3xl 
-                      animate-float" />
-      
-      {[...Array(15)].map((_, i) => (
+      <div className={`absolute top-10 left-10 w-32 h-16
+                      bg-white/30 rounded-full blur-2xl ${animated ? 'animate-float' : ''}`} />
+      <div className={`absolute top-32 right-20 w-40 h-20
+                      bg-[var(--color-primary)]/20 rounded-full blur-2xl
+                      ${animated ? 'animate-float' : ''}`} />
+      <div className={`absolute top-1/2 left-1/3 w-48 h-24
+                      bg-[var(--color-secondary)]/15 rounded-full blur-3xl
+                      ${animated ? 'animate-float' : ''}`} />
+
+      {animated && [...Array(15)].map((_, i) => (
         <div key={i}
           className="absolute text-2xl animate-fall"
           style={{

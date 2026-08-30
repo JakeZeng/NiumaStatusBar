@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import type { ProviderConfig } from '../api';
@@ -63,7 +63,7 @@ interface Props {
   onSave: (provider: ProviderConfig) => void;
 }
 
-export function ConfigModal({ isOpen, provider, onClose, onSave }: Props) {
+export const ConfigModal = memo(function ConfigModal({ isOpen, provider, onClose, onSave }: Props) {
   const { t } = useTranslation();
   const [form, setForm] = useState<Partial<ProviderConfig>>({});
 
@@ -252,4 +252,4 @@ export function ConfigModal({ isOpen, provider, onClose, onSave }: Props) {
       </div>
     </ModalBackdrop>
   );
-}
+});

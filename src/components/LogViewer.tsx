@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Search, ScrollText, X, Pause, Play, Trash2, ChevronDown, ChevronUp,
@@ -35,7 +35,7 @@ type TimeRangeKey = typeof TIME_RANGES[number]['key'];
  * - 实时事件：listen('app-log', ...) 增量追加（暂停时丢弃）
  * - 滚动跟随：滚到底时新日志自动追加；滚走时显示"继续跟踪"按钮
  */
-export function LogViewer({ open, onClose }: Props) {
+export const LogViewer = memo(function LogViewer({ open, onClose }: Props) {
   const { t } = useTranslation();
 
   // ===== State =====
@@ -107,7 +107,9 @@ export function LogViewer({ open, onClose }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, debouncedKeyword, levels, categories, since]);
 
-  // ===== 实时事件订阅 =====
+  // ===== 实时事件订阅（批量合并：每 100ms 最多 flush 一次） =====
+  const pendingRef = useRef<LogEntry[]>([]);
+  const flushTimerRef = useRef<number | null>(null);
   useEffect(() => {
     if (!open) return;
     const un = listen<LogEntry>('app-log', (e) => {
@@ -116,11 +118,27 @@ export function LogViewer({ open, onClose }: Props) {
       if (!matchesFiltersLocal(entry, debouncedKeyword, levels, categories, since)) {
         return;
       }
-      setLogs(prev => [...prev, entry].slice(-500));
-      setLatestId(entry.id);
+      pendingRef.current.push(entry);
+      if (flushTimerRef.current != null) return;
+      flushTimerRef.current = window.setTimeout(() => {
+        flushTimerRef.current = null;
+        const batch = pendingRef.current;
+        pendingRef.current = [];
+        if (batch.length === 0) return;
+        setLogs(prev => {
+          const next = prev.concat(batch);
+          return next.length > 500 ? next.slice(-500) : next;
+        });
+        setLatestId(batch[batch.length - 1].id);
+      }, 100);
     });
     return () => {
       un.then(fn => fn());
+      if (flushTimerRef.current != null) {
+        clearTimeout(flushTimerRef.current);
+        flushTimerRef.current = null;
+      }
+      pendingRef.current = [];
     };
   }, [open, paused, debouncedKeyword, levels, categories, since]);
 
@@ -166,14 +184,14 @@ export function LogViewer({ open, onClose }: Props) {
     });
   };
 
-  const toggleExpanded = (id: number) => {
+  const toggleExpanded = useCallback((id: number) => {
     setExpanded(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
-  };
+  }, []);
 
   const handleClear = async () => {
     try {
@@ -341,7 +359,7 @@ export function LogViewer({ open, onClose }: Props) {
               key={entry.id}
               entry={entry}
               expanded={expanded.has(entry.id)}
-              onToggleExpand={() => toggleExpanded(entry.id)}
+              onToggleExpand={toggleExpanded}
             />
           ))}
         </div>
@@ -424,7 +442,7 @@ export function LogViewer({ open, onClose }: Props) {
       </div>
     </ModalBackdrop>
   );
-}
+});
 
 // ===== 子组件与辅助 =====
 
@@ -470,19 +488,20 @@ function IconAction({
   );
 }
 
-function LogRow({
+const LogRow = memo(function LogRow({
   entry, expanded, onToggleExpand,
 }: {
   entry: LogEntry;
   expanded: boolean;
-  onToggleExpand: () => void;
+  onToggleExpand: (id: number) => void;
 }) {
   const time = new Date(entry.timestamp * 1000).toLocaleTimeString();
+  const handleClick = useCallback(() => onToggleExpand(entry.id), [onToggleExpand, entry.id]);
   return (
     <div className="border-b border-[var(--border-color)]/30 px-2 py-1.5
                     hover:bg-[var(--bg-overlay)]/40 transition-colors">
       <button
-        onClick={onToggleExpand}
+        onClick={handleClick}
         className="w-full flex items-start gap-2 text-left"
       >
         <span className="text-[var(--text-muted)] shrink-0">{time}</span>
@@ -510,7 +529,7 @@ function LogRow({
       )}
     </div>
   );
-}
+});
 
 function LevelBadge({ level }: { level: LogLevel }) {
   return (

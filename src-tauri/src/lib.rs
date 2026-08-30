@@ -165,6 +165,15 @@ pub fn run() {
                 // 注册系统托盘 + 用量轮播 tooltip
                 tray::setup_tray(app.handle(), manager.clone(), logger.clone())
                     .map_err(|e| format!("Failed to setup tray: {}", e))?;
+
+                // 按用户偏好应用托盘显隐（无偏好时默认可见）
+                let tray_visible = db
+                    .get_setting(commands::TRAY_VISIBLE_KEY)
+                    .ok()
+                    .flatten()
+                    .map(|v| v != "0")
+                    .unwrap_or(true);
+                tray::apply_tray_visibility(app.handle(), tray_visible);
             }
 
             Ok(())
@@ -191,6 +200,10 @@ pub fn run() {
             commands::set_app_theme,
             commands::query_logs,
             commands::clear_logs,
+            commands::get_tray_visible,
+            commands::set_tray_visible,
+            commands::get_autostart,
+            commands::set_autostart,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

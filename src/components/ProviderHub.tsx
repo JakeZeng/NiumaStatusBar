@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Search, Check, Plus, ExternalLink, Power, PowerOff, X, Key, Sparkles, Settings } from 'lucide-react';
 import { api, type ProviderPreset, type ProviderConfig } from '../api';
 import { ModalBackdrop } from './ModalBackdrop';
@@ -20,7 +20,7 @@ const CATEGORY_INFO: Record<string, { label: string; icon: string; color: string
   custom: { label: '自定义', icon: '🛠️', color: 'text-purple-400' },
 };
 
-export function ProviderHub({ myProviders, onProvidersUpdated, onClose, onAddCustom, onEdit }: Props) {
+export const ProviderHub = memo(function ProviderHub({ myProviders, onProvidersUpdated, onClose, onAddCustom, onEdit }: Props) {
   const [catalog, setCatalog] = useState<ProviderPreset[]>([]);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState<string>('all');
@@ -62,12 +62,12 @@ export function ProviderHub({ myProviders, onProvidersUpdated, onClose, onAddCus
   }, [catalog, search, category]);
 
   // 启用预置
-  const handleEnable = async () => {
+  const handleEnable = useCallback(async () => {
     if (!selectedPreset || !apiKey.trim()) {
       setMessage({ type: 'error', text: '请填写 API Key' });
       return;
     }
-    
+
     setLoading(true);
     try {
       const newProvider = await api.enablePreset(
@@ -78,7 +78,7 @@ export function ProviderHub({ myProviders, onProvidersUpdated, onClose, onAddCus
       );
       onProvidersUpdated([...myProviders, newProvider]);
       setMessage({ type: 'success', text: `${selectedPreset.name} 已添加` });
-      
+
       // 关闭弹框并重置
       setTimeout(() => {
         setSelectedPreset(null);
@@ -91,20 +91,20 @@ export function ProviderHub({ myProviders, onProvidersUpdated, onClose, onAddCus
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedPreset, apiKey, customName, refreshInterval, myProviders, onProvidersUpdated]);
 
   // 切换启用/禁用
-  const handleToggle = async (provider: ProviderConfig) => {
+  const handleToggle = useCallback(async (provider: ProviderConfig) => {
     try {
       await api.toggleProvider(provider.id, !provider.isEnabled);
-      const updated = myProviders.map(p => 
+      const updated = myProviders.map(p =>
         p.id === provider.id ? { ...p, isEnabled: !p.isEnabled } : p
       );
       onProvidersUpdated(updated);
     } catch (err) {
       console.error(err);
     }
-  };
+  }, [myProviders, onProvidersUpdated]);
 
   const getCategoryInfo = (cat: string) => CATEGORY_INFO[cat] || CATEGORY_INFO.custom;
 
@@ -416,4 +416,4 @@ export function ProviderHub({ myProviders, onProvidersUpdated, onClose, onAddCus
       )}
     </ModalBackdrop>
   );
-}
+});

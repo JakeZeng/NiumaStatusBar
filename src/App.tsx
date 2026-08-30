@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { listen } from '@tauri-apps/api/event';
 import { themeManager, type ThemeId } from './themes/ThemeManager';
@@ -16,6 +16,7 @@ import { ConfirmDialog } from './components/ConfirmDialog';
 import { LogViewer } from './components/LogViewer';
 import { Library, ScrollText } from 'lucide-react';
 import { api, type ProviderConfig } from './api';
+import { useStatusStore } from './store/statusStore';
 
 export default function App() {
   const { t } = useTranslation();
@@ -29,13 +30,35 @@ export default function App() {
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [deletingTarget, setDeletingTarget] = useState<ProviderConfig | null>(null);
 
+  const initStatusStore = useStatusStore((s) => s.init);
+  const setStatusProviders = useStatusStore((s) => s.setProviders);
+
+  // 启动：拉 providers + 注册全局 status-update 监听（一次性，App 卸载时清理）
   useEffect(() => {
+    let cancelled = false;
+    let dispose: (() => void) | undefined;
+
+    (async () => {
+      dispose = await initStatusStore();
+      if (cancelled) dispose?.();
+    })();
+
     loadProviders();
+
+    return () => {
+      cancelled = true;
+      dispose?.();
+    };
+    // loadProviders 是稳定实现，不放依赖
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 暴露给 Android 桌面组件点击跳转调用：
-  // MainActivity.onNewIntent 收到 provider_id extra 后通过 evaluateJavascript 调用
-  // 此函数，实现"组件点哪一行就打开 App 并选中该 Provider"。
+  // providers 变化时同步给 status store，回收已删除 provider 的状态缓存
+  useEffect(() => {
+    setStatusProviders(providers);
+  }, [providers, setStatusProviders]);
+
+  // 暴露给 Android 桌面组件点击跳转调用
   useEffect(() => {
     (window as unknown as {
       __NIUMA_SELECT_PROVIDER__?: (id: string) => void;
@@ -58,21 +81,20 @@ export default function App() {
     };
   }, []);
 
-  const loadProviders = async () => {
+  const loadProviders = useCallback(async () => {
     try {
       const list = await api.getProviders();
       setProviders(list);
-      if (!list.some(p => p.id === selectedProvider)) {
-        setSelectedProvider(list[0]?.id ?? null);
-      } else if (list.length > 0 && !selectedProvider) {
-        setSelectedProvider(list[0].id);
-      }
+      setSelectedProvider((cur) => {
+        if (list.some(p => p.id === cur)) return cur;
+        return list[0]?.id ?? null;
+      });
     } catch (err) {
       console.error(err);
     }
-  };
+  }, []);
 
-  const handleSaveProvider = async (provider: ProviderConfig) => {
+  const handleSaveProvider = useCallback(async (provider: ProviderConfig) => {
     try {
       const existing = providers.find(p => p.id === provider.id);
       if (existing) {
@@ -86,18 +108,17 @@ export default function App() {
     } catch (err) {
       console.error(err);
     }
-  };
+  }, [providers, loadProviders]);
 
-  const handleProvidersUpdated = (newProviders: ProviderConfig[]) => {
+  const handleProvidersUpdated = useCallback((newProviders: ProviderConfig[]) => {
     setProviders(newProviders);
-    if (!newProviders.some(p => p.id === selectedProvider)) {
-      setSelectedProvider(newProviders[0]?.id ?? null);
-    } else if (newProviders.length > 0 && !selectedProvider) {
-      setSelectedProvider(newProviders[0].id);
-    }
-  };
+    setSelectedProvider((cur) => {
+      if (newProviders.some(p => p.id === cur)) return cur;
+      return newProviders[0]?.id ?? null;
+    });
+  }, []);
 
-  const handleDelete = async (p: ProviderConfig) => {
+  const handleDelete = useCallback(async (p: ProviderConfig) => {
     try {
       await api.deleteProvider(p.id);
       await loadProviders();
@@ -106,18 +127,39 @@ export default function App() {
     } finally {
       setDeletingTarget(null);
     }
-  };
+  }, [loadProviders]);
 
-  const selectedProviderName = providers.find(p => p.id === selectedProvider)?.name || '';
-  const selectedProviderType = providers.find(p => p.id === selectedProvider)?.provider;
+  // 稳定引用：给 ProviderCard 用，避免破坏 memo
+  const handleCardDelete = useCallback((p: ProviderConfig) => {
+    setDeletingTarget(p);
+  }, []);
 
-  // 供 MobileMenu / ProviderHub 调用的统一打开入口
-  const openHub = () => setHubOpen(true);
-  const openAddCustom = () => {
+  const openHub = useCallback(() => setHubOpen(true), []);
+  const closeHub = useCallback(() => setHubOpen(false), []);
+  const openLogs = useCallback(() => setLogViewerOpen(true), []);
+  const closeLogs = useCallback(() => setLogViewerOpen(false), []);
+
+  const openAddCustom = useCallback(() => {
     setEditing(null);
     setModalOpen(true);
     setHubOpen(false);
-  };
+  }, []);
+
+  const closeConfigModal = useCallback(() => {
+    setModalOpen(false);
+    setEditing(null);
+  }, []);
+
+  const handleEditFromHub = useCallback((p: ProviderConfig) => {
+    setEditing(p);
+    setModalOpen(true);
+    setHubOpen(false);
+  }, []);
+
+  const selectedProviderObj = providers.find(p => p.id === selectedProvider);
+  const selectedProviderName = selectedProviderObj?.name || '';
+  const selectedProviderType = selectedProviderObj?.provider;
+  const selectedRefreshInterval = selectedProviderObj?.refreshInterval;
 
   return (
     <div className="min-h-screen text-[var(--text-primary)]">
@@ -151,7 +193,7 @@ export default function App() {
               <span>供应商中心</span>
             </button>
             <button
-              onClick={() => setLogViewerOpen(true)}
+              onClick={openLogs}
               className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-lg
                        bg-[var(--bg-card)] border border-[var(--border-color)]
                        text-[var(--text-primary)]
@@ -171,7 +213,7 @@ export default function App() {
             {/* 移动端：收纳"供应商中心/导入导出/语言/主题/日志" */}
             <MobileMenu
               onOpenHub={openHub}
-              onOpenLogs={() => setLogViewerOpen(true)}
+              onOpenLogs={openLogs}
               onImportExport={() => { /* 由 hub 间接管理 */ }}
             />
           </div>
@@ -203,7 +245,7 @@ export default function App() {
             providerId={selectedProvider}
             providerName={selectedProviderName}
             providerType={selectedProviderType}
-            refreshInterval={providers.find(p => p.id === selectedProvider)?.refreshInterval}
+            refreshInterval={selectedRefreshInterval}
           />
         )}
 
@@ -230,19 +272,17 @@ export default function App() {
               <ProviderCard
                 key={provider.id}
                 provider={provider}
-                onDelete={(p) => setDeletingTarget(p)}
+                onDelete={handleCardDelete}
               />
             ))}
           </div>
         )}
       </main>
 
-      {/* 移动端"自定义 Provider"入口已并入供应商中心，故此处不再单独放置悬浮按钮 */}
-
       <ConfigModal
         isOpen={modalOpen}
         provider={editing}
-        onClose={() => { setModalOpen(false); setEditing(null); }}
+        onClose={closeConfigModal}
         onSave={handleSaveProvider}
       />
 
@@ -250,15 +290,15 @@ export default function App() {
         <ProviderHub
           myProviders={providers}
           onProvidersUpdated={handleProvidersUpdated}
-          onClose={() => setHubOpen(false)}
+          onClose={closeHub}
           onAddCustom={openAddCustom}
-          onEdit={(p) => { setEditing(p); setModalOpen(true); setHubOpen(false); }}
+          onEdit={handleEditFromHub}
         />
       )}
 
       <LogViewer
         open={logViewerOpen}
-        onClose={() => setLogViewerOpen(false)}
+        onClose={closeLogs}
       />
 
       <CloseConfirmDialog

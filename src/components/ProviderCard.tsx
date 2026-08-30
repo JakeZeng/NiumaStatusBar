@@ -1,11 +1,10 @@
-import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
-import { useState, useEffect } from 'react';
+import { memo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CheckCircle, XCircle, RefreshCw, Trash2 } from 'lucide-react';
-import type { ProviderConfig, UsageStatus } from '../api';
+import type { ProviderConfig } from '../api';
 import { getCurrencySymbol } from '../lib/currency';
 import { formatRelativeReset } from '../lib/format';
+import { useStatusStore } from '../store/statusStore';
 
 interface Props {
   provider: ProviderConfig;
@@ -21,7 +20,9 @@ interface QuotaRowProps {
   resetAt?: number | null;
 }
 
-function QuotaRow({ label, remaining, total, used, remainingPercent, resetAt }: QuotaRowProps) {
+const QuotaRow = memo(function QuotaRow({
+  label, remaining, total, used, remainingPercent, resetAt,
+}: QuotaRowProps) {
   const hasPercent = remainingPercent != null;
   const hasTotalUsed =
     total != null && total !== undefined && total > 0 &&
@@ -86,62 +87,33 @@ function QuotaRow({ label, remaining, total, used, remainingPercent, resetAt }: 
       )}
     </div>
   );
+});
+
+function StatusIcon({ loading, hasError }: { loading: boolean; hasError: boolean }) {
+  if (loading) return <RefreshCw className="w-5 h-5 text-[var(--color-warning)] animate-spin" />;
+  if (hasError) return <XCircle className="w-5 h-5 text-[var(--color-danger)]" />;
+  return <CheckCircle className="w-5 h-5 text-[var(--color-success)]" />;
 }
 
-export function ProviderCard({ provider, onDelete }: Props) {
+// ProviderCard 改为纯展示：状态从全局 store 订阅，刷新动作也走 store.fetchOne。
+// 这样 N 张卡只共享一份 status-update 事件，状态变化只触发相关卡片重渲染。
+function ProviderCardImpl({ provider, onDelete }: Props) {
   const { t } = useTranslation();
-  const [status, setStatus] = useState<UsageStatus | null>(null);
-  const [loading, setLoading] = useState(false);
+  // selector 精确订阅自身相关字段，避免无关 provider 状态变化导致本卡 re-render
+  const status = useStatusStore((s) => s.byId[provider.id]);
+  const loading = useStatusStore((s) => s.loadingById[provider.id] ?? false);
+  const fetchOne = useStatusStore((s) => s.fetchOne);
 
-  // 监听后端推送的状态更新
-  useEffect(() => {
-    const unlisten = listen<UsageStatus>('status-update', (event) => {
-      if (event.payload.provider_id === provider.id) {
-        setStatus(event.payload);
-        setLoading(false);
-      }
-    });
+  const handleFetch = useCallback(() => {
+    fetchOne(provider.id).catch(() => { /* 错误已在 store 内处理 */ });
+  }, [fetchOne, provider.id]);
 
-    return () => {
-      unlisten.then(fn => fn());
-    };
-  }, [provider.id]);
-
-  // 初始加载状态
-  useEffect(() => {
-    const loadStatus = async () => {
-      try {
-        const result = await invoke<UsageStatus | null>('get_provider_status', { id: provider.id });
-        if (result) {
-          setStatus(result);
-        }
-      } catch (err) {
-        console.error(err);
-      }
-    };
-    loadStatus();
-  }, [provider.id]);
-
-  const fetchStatus = async () => {
-    setLoading(true);
-    try {
-      const result = await invoke<UsageStatus>('fetch_provider_status', { id: provider.id });
-      setStatus(result);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const getStatusIcon = () => {
-    if (loading) return <RefreshCw className="w-5 h-5 text-[var(--color-warning)] animate-spin" />;
-    if (status?.last_error) return <XCircle className="w-5 h-5 text-[var(--color-danger)]" />;
-    return <CheckCircle className="w-5 h-5 text-[var(--color-success)]" />;
-  };
+  const handleDelete = useCallback(() => {
+    onDelete?.(provider);
+  }, [onDelete, provider]);
 
   // 判断是否使用 Coding Plan 多维度展示
-  const isCodingPlan = 
+  const isCodingPlan =
     provider.provider === 'minimax_coding' ||
     provider.provider === 'minimax_token' ||
     provider.provider === 'volcengine_coding' ||
@@ -182,7 +154,7 @@ export function ProviderCard({ provider, onDelete }: Props) {
 
       <div className="flex items-center justify-between mb-3 sm:mb-4">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-          {getStatusIcon()}
+          <StatusIcon loading={loading} hasError={!!status?.last_error} />
           <div className="min-w-0 flex-1">
             <h3 className="font-bold text-sm sm:text-base text-[var(--text-primary)] truncate">{provider.name}</h3>
             <p className="text-xs text-[var(--text-secondary)] uppercase tracking-wider truncate">
@@ -192,9 +164,9 @@ export function ProviderCard({ provider, onDelete }: Props) {
         </div>
         <div className="flex gap-2">
           <button
-            onClick={fetchStatus}
+            onClick={handleFetch}
             disabled={loading}
-            className="p-2 rounded-lg hover:bg-[var(--bg-overlay)] 
+            className="p-2 rounded-lg hover:bg-[var(--bg-overlay)]
                        text-[var(--text-secondary)] hover:text-[var(--color-primary)]
                        transition-colors"
             title="刷新"
@@ -203,7 +175,7 @@ export function ProviderCard({ provider, onDelete }: Props) {
           </button>
           {onDelete && (
             <button
-              onClick={() => onDelete(provider)}
+              onClick={handleDelete}
               className="p-2 rounded-lg hover:bg-[var(--bg-overlay)]
                          text-[var(--text-secondary)] hover:text-[var(--color-danger)]
                          transition-colors"
@@ -270,12 +242,12 @@ export function ProviderCard({ provider, onDelete }: Props) {
 
           <div className="relative h-2 bg-[var(--bg-secondary)] rounded-full overflow-hidden">
             <div
-              className="absolute inset-y-0 left-0 bg-gradient-to-r 
+              className="absolute inset-y-0 left-0 bg-gradient-to-r
                          from-[var(--color-primary)] to-[var(--color-secondary)]
                          rounded-full transition-all duration-500"
               style={{ width: `${Math.min(usagePercent, 100)}%` }}
             >
-              <div className="absolute inset-0 bg-white/20 animate-pulse" />
+              {/* 余额条内部的 animate-pulse 移除 — 移动端持续动画拖累主线程合成 */}
             </div>
           </div>
         </div>
@@ -311,3 +283,12 @@ export function ProviderCard({ provider, onDelete }: Props) {
     </div>
   );
 }
+
+// 用 React.memo + 自定义比较：只要 provider 引用不变就不重渲染。
+// 关键：onDelete 必须稳定（见 App.tsx 改成 useCallback），否则 memo 形同虚设。
+export const ProviderCard = memo(
+  ProviderCardImpl,
+  (prev, next) =>
+    prev.provider === next.provider &&
+    prev.onDelete === next.onDelete,
+);

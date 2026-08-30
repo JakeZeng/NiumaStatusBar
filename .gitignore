@@ -29,3 +29,6 @@ pnpm-debug.log*
 # Temporary files
 *.tmp
 *.temp
+
+# IDE workspace / local AI memory (与项目无关)
+.workbuddy/

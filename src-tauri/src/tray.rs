@@ -86,6 +86,14 @@ fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
+/// 按偏好显隐托盘图标。Tauri 2 `TrayIcon::set_visible(bool)` 在显/隐间切换。
+/// 启动时按 settings 表里的偏好应用；用户切换后由 `set_tray_visible` 命令调用。
+pub fn apply_tray_visibility<R: Runtime>(app: &AppHandle<R>, visible: bool) {
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
+        let _ = tray.set_visible(visible);
+    }
+}
+
 fn spawn_tooltip_rotator<R: Runtime>(app: AppHandle<R>, manager: Arc<ProviderManager>, logger: Arc<AppLogger>) {
     tauri::async_runtime::spawn(async move {
         let mut idx: usize = 0;

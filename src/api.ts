@@ -1,5 +1,23 @@
 import { invoke } from '@tauri-apps/api/core';
 
+/**
+ * 桌面端判定：托盘 / 开机自启 等仅在桌面端有意义，移动端调用后端会找不到 handler。
+ * 用 `__TAURI_INTERNALS__?.platform` 区分（"macos" / "windows" / "linux" 视为桌面，
+ * "android" / "ios" 视为移动）；同时兜底 navigator.userAgent。
+ */
+function isDesktopPlatform(): boolean {
+  if (typeof window === 'undefined') return false;
+  const w = window as unknown as {
+    __TAURI_INTERNALS__?: { platform?: string };
+  };
+  const platform = w.__TAURI_INTERNALS__?.platform;
+  if (platform) {
+    return platform === 'macos' || platform === 'windows' || platform === 'linux';
+  }
+  const ua = (typeof navigator !== 'undefined' ? navigator.userAgent : '') || '';
+  return !/Android|iPhone|iPad|iPod/i.test(ua);
+}
+
 export interface ProviderPreset {
   id: string;
   name: string;
@@ -130,6 +148,20 @@ export const api = {
   // 主题偏好（持久化到后端 settings 表，供 Android 桌面组件读取配色）
   setAppTheme: (theme: 'cyberpunk' | 'wuxia' | 'guoman') =>
     invoke('set_app_theme', { theme }),
+
+  // 托盘可见性 / 开机自启（仅桌面端有意义；移动端为 no-op）
+  getTrayVisible: () => isDesktopPlatform()
+    ? invoke<boolean>('get_tray_visible')
+    : Promise.resolve(true),
+  setTrayVisible: (visible: boolean) => isDesktopPlatform()
+    ? invoke('set_tray_visible', { visible })
+    : Promise.resolve(),
+  getAutostart: () => isDesktopPlatform()
+    ? invoke<boolean>('get_autostart')
+    : Promise.resolve(false),
+  setAutostart: (enabled: boolean) => isDesktopPlatform()
+    ? invoke('set_autostart', { enabled })
+    : Promise.resolve(),
 
   // 应用日志
   queryLogs: (q: LogQuery) => invoke<LogEntry[]>('query_logs', { q }),
