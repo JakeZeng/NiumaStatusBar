@@ -892,6 +892,58 @@ jobs:
           echo "--- patched BuildTask.kt (first 20 lines) ---"
           head -20 "$BUILDTASK"
 
+      - name: Restore home-screen widget (AppWidget) sources after init
+        run: |
+          set -e
+          ROOT=src-tauri/gen/android
+          # `tauri android init --ci` runs after `rm -rf gen/android`, so every
+          # file committed under gen/android is wiped and only the Tauri template
+          # is regenerated. The home-screen AppWidget sources (widget Kotlin
+          # package, widget_* layouts/drawables/values/xml, the manifest
+          # <receiver>/<service> entries, proguard keep rule, and the
+          # MainActivity click-through handling) are NOT part of that template,
+          # so restore them from the tagged commit.
+          git checkout HEAD -- \
+            "$ROOT/app/src/main/java/com/aimonitor/app/widget" \
+            "$ROOT/app/src/main/res/xml/widget_provider_info_small.xml" \
+            "$ROOT/app/src/main/res/xml/widget_provider_info_medium.xml" \
+            "$ROOT/app/src/main/res/xml/widget_provider_info_large.xml" \
+            "$ROOT/app/src/main/res/layout/widget_small.xml" \
+            "$ROOT/app/src/main/res/layout/widget_medium.xml" \
+            "$ROOT/app/src/main/res/layout/widget_large.xml" \
+            "$ROOT/app/src/main/res/layout/widget_large_list_item.xml" \
+            "$ROOT/app/src/main/res/layout/widget_loading.xml" \
+            "$ROOT/app/src/main/res/drawable/widget_background.xml" \
+            "$ROOT/app/src/main/res/drawable/widget_progress_fill.xml" \
+            "$ROOT/app/src/main/res/drawable/widget_progress_track.xml" \
+            "$ROOT/app/src/main/res/drawable/widget_refresh_button.xml" \
+            "$ROOT/app/src/main/res/drawable/widget_status_dot.xml" \
+            "$ROOT/app/src/main/res/drawable/widget_status_dot_disabled.xml" \
+            "$ROOT/app/src/main/res/drawable/widget_status_dot_error.xml" \
+            "$ROOT/app/src/main/res/values/widget_colors.xml" \
+            "$ROOT/app/src/main/res/values/widget_strings.xml" \
+            "$ROOT/app/src/main/res/values-night/widget_colors.xml" \
+            "$ROOT/app/src/main/res/values-zh/widget_strings.xml" \
+            "$ROOT/app/src/main/AndroidManifest.xml" \
+            "$ROOT/app/proguard-rules.pro"
+
+          # MainActivity.kt carries the widget click-through intent handling.
+          # Restore our version, then RE-APPLY the WRY 0.55.1 `@Keep override
+          # var id` injection (the earlier MainActivity sed step ran against
+          # the init-generated template, which this checkout just replaced).
+          MAIN_ACTIVITY="$ROOT/app/src/main/java/com/aimonitor/app/MainActivity.kt"
+          git checkout HEAD -- "$MAIN_ACTIVITY"
+          if ! grep -q '^  override var id: Int = 0$' "$MAIN_ACTIVITY"; then
+            if ! grep -q 'import androidx.annotation.Keep' "$MAIN_ACTIVITY"; then
+              sed -i 's|^import android.os.Bundle$|&\nimport androidx.annotation.Keep|' "$MAIN_ACTIVITY"
+            fi
+            sed -i 's|^}$|  @Keep\n  override var id: Int = 0\n}|' "$MAIN_ACTIVITY"
+          fi
+
+          echo "--- widget sources restored ---"
+          find "$ROOT/app/src/main/java/com/aimonitor/app/widget" -type f | sort
+          echo "manifest receiver count: $(grep -c 'UsageWidgetProvider' "$ROOT/app/src/main/AndroidManifest.xml")"
+
       - name: Make gradlew executable
         run: |
           chmod +x src-tauri/gen/android/gradlew || true

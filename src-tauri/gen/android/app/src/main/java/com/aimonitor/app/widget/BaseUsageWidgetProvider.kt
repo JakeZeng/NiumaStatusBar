@@ -38,8 +38,8 @@ abstract class BaseUsageWidgetProvider : AppWidgetProvider() {
         refreshAll(context, appWidgetManager, intArrayOf(appWidgetId))
     }
 
-    override fun onDeleted(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
-        super.onDeleted(context, appWidgetManager, appWidgetIds)
+    override fun onDeleted(context: Context, appWidgetIds: IntArray) {
+        super.onDeleted(context, appWidgetIds)
         // 预留：清理 WidgetPrefs。当前实现未做 per-widget 配置，无需清理。
     }
 

@@ -142,7 +142,7 @@ object WidgetLayoutBuilder {
             Size.MEDIUM -> {
                 rv.setTextViewText(R.id.widget_header, context.getString(R.string.widget_no_provider))
                 rv.setViewVisibility(R.id.widget_row_1, android.view.View.GONE)
-                rv.setViewVisibility(R.id.widget_row_2, android.view.View.View.GONE)
+                rv.setViewVisibility(R.id.widget_row_2, android.view.View.GONE)
                 rv.setViewVisibility(R.id.widget_row_3, android.view.View.GONE)
             }
             Size.LARGE -> {
