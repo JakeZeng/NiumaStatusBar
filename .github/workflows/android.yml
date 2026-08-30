@@ -955,19 +955,25 @@ jobs:
           set -e
           APK=$(ls src-tauri/gen/android/app/build/outputs/apk/arm64/release/*.apk | head -1)
           echo "Checking $APK for AppWidget receivers..."
-          # The widget restore step runs after `tauri android init --ci` wipes
-          # gen/android; if its file list ever drifts from what's committed,
-          # the APK silently ships without widget receivers. Fail the build
-          # loudly here. NOTE: the compiled AndroidManifest inside the APK is
-          # binary AXML, whose string pool encodes class names as UTF-16LE
-          # (bytes interleaved with NUL) — plain `strings` only sees 8-bit
-          # runs and misses them, so strip NULs before grepping.
-          MANIFEST=$(unzip -p "$APK" AndroidManifest.xml | tr -d '\000')
+          # The compiled AndroidManifest inside the APK is binary AXML — byte
+          # grepping is unreliable (string pool encoding varies across aapt2
+          # versions), so parse it properly with aapt2 dump xmltree. If the
+          # widget restore step ever drifts from the committed file list, the
+          # APK silently ships without widgets; fail loudly here instead.
+          AAPT=$(ls "$ANDROID_SDK_ROOT"/build-tools/*/aapt2 | sort -V | tail -1)
+          echo "Using $AAPT"
+          "$AAPT" dump xmltree --file AndroidManifest.xml "$APK" > /tmp/apk-manifest.txt
+          echo "--- <receiver> entries in merged APK manifest ---"
+          grep -i "receiver" /tmp/apk-manifest.txt || true
+          echo "--- widget Kotlin classes packaged in APK ---"
+          unzip -l "$APK" | grep -i "widget" || true
+          echo "-----------------------------------------------"
           for cls in UsageWidgetProviderSmall UsageWidgetProviderMedium UsageWidgetProviderLarge; do
-            if echo "$MANIFEST" | grep -Fq "$cls"; then
+            if grep -Fq "$cls" /tmp/apk-manifest.txt; then
               echo "OK: $cls present"
             else
               echo "FATAL: $cls missing from APK manifest — widget restore step is incomplete" >&2
+              echo "(check the 'Restore home-screen widget' step log above for 'manifest receiver count:' — should be 3)" >&2
               exit 1
             fi
           done
