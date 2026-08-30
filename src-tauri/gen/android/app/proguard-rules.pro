@@ -94,6 +94,13 @@
 -keep class com.aimonitor.app.WryActivity { *; }
 # Remove this block once we move off tauri 2.11.3 (which pins wry 0.55.1).
 
+# --- 桌面组件 (AppWidget) ---
+# Manifest 通过 ".widget.UsageWidgetProvider*" 等字符串引用 widget 类。
+# R8 默认会尝试重命名/剥离；如果不显式 keep，widget 在 release 包里
+# 会 ClassNotFoundException，桌面长按时找不到入口。
+# 同时 RemoteViewsFactory、RemoteViewsService 也要 keep。
+-keep class com.aimonitor.app.widget.** { *; }
+
 # --- Tauri plugin classes (NiumaStatusBar fix, v0.1.28+ regression) ---
 # WRY 0.55.1's WryActivity.getAppClass(name) resolves plugin classes by
 # string at runtime via Class.forName("app.tauri.shell.ShellPlugin")

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  大组件 ListView 单行：供应商名 + 主数字（余额 or 5H%）+ 状态点。
+  整行可点击，跳转 MainActivity。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_list_row"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingTop="4dp"
+    android:paddingBottom="4dp"
+    android:background="?android:attr/selectableItemBackground">
+
+    <TextView
+        android:id="@+id/widget_row_name"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:textColor="@color/widget_text_primary"
+        android:textSize="13sp"
+        android:singleLine="true"
+        android:ellipsize="end"
+        tools:text="Provider Name"
+        xmlns:tools="http://schemas.android.com/tools" />
+
+    <TextView
+        android:id="@+id/widget_row_value"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="6dp"
+        android:textColor="@color/widget_text_primary"
+        android:textSize="13sp"
+        android:textStyle="bold"
+        tools:text="¥ 12.34"
+        xmlns:tools="http://schemas.android.com/tools" />
+
+    <ImageView
+        android:id="@+id/widget_row_status"
+        android:layout_width="10dp"
+        android:layout_height="10dp"
+        android:layout_marginStart="6dp"
+        android:src="@drawable/widget_status_dot"
+        android:contentDescription="@string/widget_status_ok" />
+</LinearLayout>

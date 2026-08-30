@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Widget 的本地化字符串与 App 内 react-i18next 是两套独立资源。
+  Widget 进程不加载 WebView，所以不能复用 zh.json / en.json。
+  此文件用 Android 标准资源限定符 values / values-zh 即可由系统根据
+  设备语言自动选择；未提供 values-en 时回退到 values（英文）。
+-->
+<resources>
+    <!-- AppWidgetProvider 列表里显示的标签与说明 -->
+    <string name="widget_label_small">AI Monitor · Quick</string>
+    <string name="widget_label_medium">AI Monitor · Overview</string>
+    <string name="widget_label_large">AI Monitor · Dashboard</string>
+
+    <string name="widget_desc_small">One provider · balance at a glance</string>
+    <string name="widget_desc_medium">One provider quotas or top 3 balances</string>
+    <string name="widget_desc_large">Full provider list with status</string>
+
+    <!-- Quota 行标签 -->
+    <string name="widget_5h">5H</string>
+    <string name="widget_week">Week</string>
+    <string name="widget_month">Month</string>
+
+    <!-- 空态 / 异常提示 -->
+    <string name="widget_no_provider">No providers yet</string>
+    <string name="widget_no_data">Waiting for first poll…</string>
+    <string name="widget_offline">Offline · showing last snapshot</string>
+    <string name="widget_error">Polling failed</string>
+
+    <!-- 状态点提示（accessibility） -->
+    <string name="widget_status_ok">Healthy</string>
+    <string name="widget_status_error">Error</string>
+
+    <!-- 时间显示 -->
+    <string name="widget_updated_at">Updated %1$s</string>
+</resources>

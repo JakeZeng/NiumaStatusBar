@@ -20,6 +20,13 @@ impl Database {
 
         let conn = Connection::open(db_path)?;
 
+        // 启用 WAL：reader 与 writer 并发不互斥（widget 进程在 /data/data 同 UID 下读
+        // usage_history 不会被主进程写阻塞）。busy_timeout 让 widget 在主进程短暂持有
+        // Connection::Mutex 时自旋等待而非立刻抛 SQLITE_BUSY。
+        conn.pragma_update(None, "journal_mode", "WAL")?;
+        conn.pragma_update(None, "busy_timeout", 5000)?;
+        conn.pragma_update(None, "wal_autocheckpoint", 1000)?;
+
         // 创建 Provider 配置表
         conn.execute(
             "CREATE TABLE IF NOT EXISTS providers (
@@ -326,6 +333,79 @@ impl Database {
             params![cutoff],
         )?;
         Ok(())
+    }
+
+    /// 取每个 provider 的最新一行 usage_history，并与 providers 表 JOIN
+    /// provider 元数据（name/provider/is_enabled）。
+    /// 主要给桌面组件进程做"全量一次性快照"渲染用。
+    /// 返回：Vec<(ProviderConfig, UsageStatus)>，按 provider.name 升序。
+    pub fn latest_usage_per_provider(&self) -> Result<Vec<(ProviderConfig, UsageStatus)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT p.id, p.name, p.provider, p.base_url, p.api_key, p.query_endpoint,
+                    p.query_method, p.query_headers, p.query_params, p.refresh_interval,
+                    p.is_enabled, p.status,
+                    h.provider_id, h.timestamp, h.balance, h.balance_used, h.balance_limit,
+                    h.requests_today, h.error_rate, h.avg_latency, h.last_error,
+                    h.quota_5h_remaining, h.quota_5h_remaining_percent, h.quota_5h_total, h.quota_5h_used,
+                    h.quota_week_remaining, h.quota_week_remaining_percent, h.quota_week_total, h.quota_week_used,
+                    h.quota_month_remaining, h.quota_month_total, h.quota_month_used
+             FROM usage_history h
+             JOIN (
+               SELECT provider_id, MAX(timestamp) AS max_ts
+               FROM usage_history
+               GROUP BY provider_id
+             ) latest ON latest.provider_id = h.provider_id AND latest.max_ts = h.timestamp
+             JOIN providers p ON p.id = h.provider_id
+             WHERE p.is_enabled = 1
+             ORDER BY p.name COLLATE NOCASE",
+        )?;
+
+        let rows = stmt.query_map([], |row| {
+            let headers_json: String = row.get(7)?;
+            let params_json: String = row.get(8)?;
+            let is_enabled_int: i32 = row.get(10)?;
+            let provider = ProviderConfig {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                provider: row.get(2)?,
+                base_url: row.get(3)?,
+                api_key: row.get(4)?,
+                query_endpoint: row.get(5)?,
+                query_method: row.get(6)?,
+                query_headers: serde_json::from_str(&headers_json).unwrap_or_default(),
+                query_params: serde_json::from_str(&params_json).unwrap_or(serde_json::Value::Null),
+                refresh_interval: row.get(9)?,
+                is_enabled: is_enabled_int != 0,
+                status: row.get(11)?,
+            };
+            let status = UsageStatus {
+                provider_id: row.get(12)?,
+                timestamp: row.get(13)?,
+                balance: row.get(14)?,
+                balance_used: row.get(15)?,
+                balance_limit: row.get(16)?,
+                requests_today: row.get(17)?,
+                error_rate: row.get(18)?,
+                avg_latency: row.get(19)?,
+                last_error: row.get(20)?,
+                quota_5h_remaining: row.get(21)?,
+                quota_5h_remaining_percent: row.get(22)?,
+                quota_5h_total: row.get(23)?,
+                quota_5h_used: row.get(24)?,
+                quota_week_remaining: row.get(25)?,
+                quota_week_remaining_percent: row.get(26)?,
+                quota_week_total: row.get(27)?,
+                quota_week_used: row.get(28)?,
+                quota_month_remaining: row.get(29)?,
+                quota_month_total: row.get(30)?,
+                quota_month_used: row.get(31)?,
+                ..Default::default()
+            };
+            Ok((provider, status))
+        })?;
+
+        rows.collect()
     }
 
     // ===== 设置（KV）=====

@@ -33,6 +33,22 @@ export default function App() {
     loadProviders();
   }, []);
 
+  // 暴露给 Android 桌面组件点击跳转调用：
+  // MainActivity.onNewIntent 收到 provider_id extra 后通过 evaluateJavascript 调用
+  // 此函数，实现"组件点哪一行就打开 App 并选中该 Provider"。
+  useEffect(() => {
+    (window as unknown as {
+      __NIUMA_SELECT_PROVIDER__?: (id: string) => void;
+    }).__NIUMA_SELECT_PROVIDER__ = (id: string) => {
+      setSelectedProvider(id);
+    };
+    return () => {
+      delete (window as unknown as {
+        __NIUMA_SELECT_PROVIDER__?: (id: string) => void;
+      }).__NIUMA_SELECT_PROVIDER__;
+    };
+  }, []);
+
   useEffect(() => {
     const unlisten = listen('close-requested', () => {
       setCloseDialogOpen(true);

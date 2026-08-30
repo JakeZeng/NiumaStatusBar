@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_label_small">粮草用量 · 速览</string>
+    <string name="widget_label_medium">粮草用量 · 总览</string>
+    <string name="widget_label_large">粮草用量 · 面板</string>
+
+    <string name="widget_desc_small">单供应商 · 余额一眼可见</string>
+    <string name="widget_desc_medium">单供应商完整额度 / 前 3 名余额</string>
+    <string name="widget_desc_large">全部供应商列表与状态</string>
+
+    <string name="widget_5h">5小时</string>
+    <string name="widget_week">本周</string>
+    <string name="widget_month">本月</string>
+
+    <string name="widget_no_provider">尚未添加供应商</string>
+    <string name="widget_no_data">等待首次轮询…</string>
+    <string name="widget_offline">离线 · 显示最近一次快照</string>
+    <string name="widget_error">轮询失败</string>
+
+    <string name="widget_status_ok">正常</string>
+    <string name="widget_status_error">异常</string>
+
+    <string name="widget_updated_at">更新于 %1$s</string>
+</resources>
