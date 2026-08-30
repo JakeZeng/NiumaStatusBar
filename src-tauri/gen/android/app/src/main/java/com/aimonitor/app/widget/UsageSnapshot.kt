@@ -72,6 +72,37 @@ data class UsageSnapshot(
         else -> "$currency "
     }
 
+    /**
+     * Coding Plan 的最小周期及其剩余值/百分比。
+     * 优先级：5h > week > month
+     */
+    fun smallestPeriod(): PeriodInfo? {
+        if (!isCodingPlan) return null
+        // 优先用百分比
+        quota5hRemainingPercent?.let {
+            return PeriodInfo(it, "5h")
+        }
+        quota5hRemaining?.let {
+            return PeriodInfo(it, "5h")
+        }
+        quotaWeekRemainingPercent?.let {
+            return PeriodInfo(it, "week")
+        }
+        quotaWeekRemaining?.let {
+            return PeriodInfo(it, "week")
+        }
+        quotaMonthRemaining?.let {
+            return PeriodInfo(it, "month")
+        }
+        return null
+    }
+
+    data class PeriodInfo(
+        val value: Double,
+        val period: String,  // "5h" | "week" | "month"
+        val isPercent: Boolean = period == "5h" && value <= 100
+    )
+
     /** 进度条百分比（0-100）。返回 null 表示无数据 */
     fun progressPercent(): Double? {
         if (isCodingPlan) {

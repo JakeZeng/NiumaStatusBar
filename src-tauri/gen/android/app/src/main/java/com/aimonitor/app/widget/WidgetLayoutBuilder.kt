@@ -48,11 +48,47 @@ object WidgetLayoutBuilder {
     private fun renderSmall(context: Context, rv: RemoteViews, data: List<UsageSnapshot>) {
         val top = data.first()
         rv.setTextViewText(R.id.widget_provider_name, top.providerName)
-        rv.setTextViewText(R.id.widget_big_number, formatBigNumber(top))
-        rv.setTextViewText(R.id.widget_sub_label, subLabelFor(context, top))
-        rv.setTextViewText(R.id.widget_updated_at, updatedAtText(context, top.timestamp))
+        rv.setTextViewText(R.id.widget_big_number, formatSmallNumber(top))
+        rv.setTextViewText(R.id.widget_sub_label, smallSubLabelFor(context, top))
         rv.setImageViewResource(R.id.widget_status_dot, statusDotFor(top))
         rv.setOnClickPendingIntent(R.id.widget_root, openAppIntent(context, top.providerId))
+    }
+
+    /**
+     * Small 尺寸的主数字：
+     * - Coding Plan：显示 "78%"（最小周期的百分比）
+     * - 余额型：显示 "¥128.50"
+     */
+    private fun formatSmallNumber(s: UsageSnapshot): String {
+        return if (s.isCodingPlan) {
+            val period = s.smallestPeriod()
+            if (period != null && period.isPercent) {
+                "${period.value.toInt()}%"
+            } else {
+                period?.let { "${formatBalance(it.value)}" } ?: "—"
+            }
+        } else {
+            val v = s.balance ?: s.balanceLimit ?: return "—"
+            "${s.currencySymbol()}${formatBalance(v)}"
+        }
+    }
+
+    /**
+     * Small 尺寸的副标签：
+     * - Coding Plan：显示周期 "5小时" / "本周" / "本月"
+     * - 余额型：显示 "余额"
+     */
+    private fun smallSubLabelFor(context: Context, s: UsageSnapshot): String {
+        if (s.isCodingPlan) {
+            val period = s.smallestPeriod()
+            return when (period?.period) {
+                "5h" -> context.getString(R.string.widget_5h)
+                "week" -> context.getString(R.string.widget_week)
+                "month" -> context.getString(R.string.widget_month)
+                else -> ""
+            }
+        }
+        return context.getString(R.string.widget_balance)
     }
 
     // ============== medium (2x3) ==============
@@ -167,20 +203,6 @@ object WidgetLayoutBuilder {
         s.lastError != null -> R.drawable.widget_status_dot_error
         !s.isEnabled -> R.drawable.widget_status_dot_disabled
         else -> R.drawable.widget_status_dot
-    }
-
-    private fun formatBigNumber(s: UsageSnapshot): String {
-        val v = s.primaryValue() ?: return "—"
-        return if (s.isCodingPlan) {
-            "${v.toInt()}%"
-        } else {
-            "${s.primarySuffix()}${formatBalance(v)}"
-        }
-    }
-
-    private fun subLabelFor(context: Context, s: UsageSnapshot): String = when {
-        s.isCodingPlan -> "5H"
-        else -> context.getString(R.string.widget_balance)
     }
 
     private fun formatRowValue(s: UsageSnapshot): String {

@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  2x2 单供应商卡。展示选中供应商的余额（余额型）或 5h 剩余百分比（Coding Plan）。
-  整个布局用 LinearLayout vertical 避免 ConstraintLayout 在 widget 进程内开销。
+  2x2 单供应商卡，适配 1x2 视觉空间。
+  - Coding Plan：显示 "78% 5小时"（主数字 + 最小周期）
+  - 余额型：显示余额 + 标签（压缩行数）
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
@@ -9,7 +10,7 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="@drawable/widget_background"
-    android:padding="10dp">
+    android:padding="8dp">
 
     <!-- 第一行：供应商名 + 状态点 -->
     <LinearLayout
@@ -24,7 +25,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:textColor="@color/widget_text_primary"
-            android:textSize="13sp"
+            android:textSize="12sp"
             android:textStyle="bold"
             android:singleLine="true"
             android:ellipsize="end"
@@ -33,45 +34,35 @@
 
         <ImageView
             android:id="@+id/widget_status_dot"
-            android:layout_width="10dp"
-            android:layout_height="10dp"
-            android:layout_marginStart="6dp"
+            android:layout_width="8dp"
+            android:layout_height="8dp"
+            android:layout_marginStart="4dp"
             android:src="@drawable/widget_status_dot"
             android:contentDescription="@string/widget_status_ok" />
     </LinearLayout>
 
-    <!-- 第二行：主数字（余额或 5h%）。大字号，主题色 fill -->
+    <!-- 第二行：主数字（大字号） -->
     <TextView
         android:id="@+id/widget_big_number"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center_vertical"
         android:textColor="@color/widget_text_primary"
-        android:textSize="20sp"
+        android:textSize="18sp"
         android:textStyle="bold"
         android:singleLine="true"
         android:ellipsize="end"
         tools:text="¥ 123.45"
         xmlns:tools="http://schemas.android.com/tools" />
 
-    <!-- 第三行：副标签（"余额" / "5H"） -->
+    <!-- 第三行：副标签（Coding Plan 显示周期，余额型显示 "余额"） -->
     <TextView
         android:id="@+id/widget_sub_label"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:textColor="@color/widget_text_secondary"
-        android:textSize="11sp"
-        tools:text="余额"
-        xmlns:tools="http://schemas.android.com/tools" />
-
-    <!-- 第四行：更新时间戳 -->
-    <TextView
-        android:id="@+id/widget_updated_at"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="2dp"
-        android:textColor="@color/widget_text_muted"
         android:textSize="10sp"
-        tools:text="更新于 12:34"
+        tools:text="余额"
         xmlns:tools="http://schemas.android.com/tools" />
 </LinearLayout>
