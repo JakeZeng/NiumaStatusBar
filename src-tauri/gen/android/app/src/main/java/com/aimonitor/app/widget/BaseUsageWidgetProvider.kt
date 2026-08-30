@@ -52,9 +52,10 @@ abstract class BaseUsageWidgetProvider : AppWidgetProvider() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val snapshots = WidgetDataReader.latestForEnabledProviders(context)
-                Log.d(TAG, "refreshAll read ${snapshots.size} snapshots")
+                val themeId = WidgetDataReader.appTheme(context)
+                Log.d(TAG, "refreshAll read ${snapshots.size} snapshots, theme=$themeId")
                 appWidgetIds.forEach { id ->
-                    val rv = WidgetLayoutBuilder.build(context, id, size, snapshots)
+                    val rv = WidgetLayoutBuilder.build(context, id, size, snapshots, themeId)
                     appWidgetManager.updateAppWidget(id, rv)
                 }
                 // 大组件 ListView 数据需主动通知 RemoteViewsService 刷新

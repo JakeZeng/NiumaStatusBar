@@ -8,6 +8,9 @@ use tauri::{AppHandle, State, WebviewWindow};
 use uuid::Uuid;
 
 pub const CLOSE_ACTION_KEY: &str = "close_action";
+/// settings 表里保存当前 App 主题的 key（cyberpunk / wuxia / guoman）。
+/// Android 桌面组件进程不加载 WebView，直接读这张表给 widget 配色。
+pub const APP_THEME_KEY: &str = "app_theme";
 
 /// 关闭行为偏好的内存缓存类型（由 lib.rs 注入），供 `on_window_event` 同步读取
 pub type CloseActionCache = Arc<std::sync::RwLock<Option<String>>>;
@@ -406,6 +409,31 @@ pub async fn app_quit(
 ) -> Result<(), String> {
     log_command_entry(&logger, "app_quit", None);
     app.exit(0);
+    Ok(())
+}
+
+// ============ 主题偏好（供 Android 桌面组件读取） ============
+
+/// 前端切换主题时把主题 id 持久化到 settings 表。
+/// Android widget 进程（不加载 WebView / localStorage）直读该值给卡片配色。
+#[tauri::command]
+pub async fn set_app_theme(
+    theme: String,
+    db: State<'_, Arc<Database>>,
+    logger: State<'_, Arc<AppLogger>>,
+) -> Result<(), String> {
+    log_command_entry(
+        &logger,
+        "set_app_theme",
+        Some(serde_json::json!({ "theme": theme })),
+    );
+    if !matches!(theme.as_str(), "cyberpunk" | "wuxia" | "guoman") {
+        let msg = format!("invalid theme: {}", theme);
+        log_command_error(&logger, "set_app_theme", &msg, None);
+        return Err(msg);
+    }
+    db.set_setting(APP_THEME_KEY, &theme)
+        .map_err(|e| log_command_error(&logger, "set_app_theme", e, None))?;
     Ok(())
 }
 

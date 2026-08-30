@@ -30,6 +30,9 @@
     <string name="widget_status_ok">Healthy</string>
     <string name="widget_status_error">Error</string>
 
+    <!-- 小卡片副标签 -->
+    <string name="widget_balance">Balance</string>
+
     <!-- 时间显示 -->
     <string name="widget_updated_at">Updated %1$s</string>
 </resources>

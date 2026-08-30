@@ -920,6 +920,9 @@ jobs:
             "$ROOT/app/src/main/res/drawable/widget_status_dot.xml" \
             "$ROOT/app/src/main/res/drawable/widget_status_dot_disabled.xml" \
             "$ROOT/app/src/main/res/drawable/widget_status_dot_error.xml" \
+            "$ROOT/app/src/main/res/drawable/widget_background_cyberpunk.xml" \
+            "$ROOT/app/src/main/res/drawable/widget_background_wuxia.xml" \
+            "$ROOT/app/src/main/res/drawable/widget_background_guoman.xml" \
             "$ROOT/app/src/main/res/values/widget_colors.xml" \
             "$ROOT/app/src/main/res/values/widget_strings.xml" \
             "$ROOT/app/src/main/res/values-night/widget_colors.xml" \

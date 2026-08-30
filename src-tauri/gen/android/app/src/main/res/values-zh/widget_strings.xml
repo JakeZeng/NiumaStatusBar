@@ -20,5 +20,7 @@
     <string name="widget_status_ok">正常</string>
     <string name="widget_status_error">异常</string>
 
+    <string name="widget_balance">余额</string>
+
     <string name="widget_updated_at">更新于 %1$s</string>
 </resources>

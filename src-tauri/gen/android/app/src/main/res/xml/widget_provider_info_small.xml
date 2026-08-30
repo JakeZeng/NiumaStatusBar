@@ -1,11 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 2x2：单供应商速览。宽度固定 2 列，不可调整大小 -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
-    android:minWidth="180dp"
-    android:minHeight="180dp"
-    android:minResizeWidth="180dp"
-    android:minResizeHeight="180dp"
-    android:maxResizeWidth="250dp"
-    android:maxResizeHeight="250dp"
+    android:minWidth="110dp"
+    android:minHeight="110dp"
     android:targetCellWidth="2"
     android:targetCellHeight="2"
     android:widgetCategory="home_screen"

@@ -188,6 +188,7 @@ pub fn run() {
             commands::reset_close_action,
             commands::window_hide_to_tray,
             commands::app_quit,
+            commands::set_app_theme,
             commands::query_logs,
             commands::clear_logs,
         ])

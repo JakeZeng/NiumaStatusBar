@@ -21,23 +21,26 @@ object WidgetLayoutBuilder {
 
     enum class Size { SMALL, MEDIUM, LARGE }
 
-    /** 主入口：根据 size 选择对应 layout 并填充数据 */
+    /** 主入口：根据 size 选择对应 layout 并填充数据。themeId 见 [WidgetTheme]。 */
     fun build(
         context: Context,
         appWidgetId: Int,
         size: Size,
         snapshots: List<UsageSnapshot>,
+        themeId: String? = null,
     ): RemoteViews {
         val rv = RemoteViews(context.packageName, layoutId(size))
         if (snapshots.isEmpty()) {
             renderEmpty(context, rv, size)
+            WidgetTheme.apply(rv, themeId, size)
             return rv
         }
         when (size) {
             Size.SMALL -> renderSmall(context, rv, snapshots)
             Size.MEDIUM -> renderMedium(context, appWidgetId, rv, snapshots)
-            Size.LARGE -> renderLarge(context, appWidgetId, rv, snapshots)
+            Size.LARGE -> renderLarge(context, appWidgetId, rv, snapshots, themeId)
         }
+        WidgetTheme.apply(rv, themeId, size)
         return rv
     }
 
@@ -46,13 +49,13 @@ object WidgetLayoutBuilder {
         val top = data.first()
         rv.setTextViewText(R.id.widget_provider_name, top.providerName)
         rv.setTextViewText(R.id.widget_big_number, formatBigNumber(top))
-        rv.setTextViewText(R.id.widget_sub_label, subLabelFor(top))
+        rv.setTextViewText(R.id.widget_sub_label, subLabelFor(context, top))
         rv.setTextViewText(R.id.widget_updated_at, updatedAtText(context, top.timestamp))
         rv.setImageViewResource(R.id.widget_status_dot, statusDotFor(top))
         rv.setOnClickPendingIntent(R.id.widget_root, openAppIntent(context, top.providerId))
     }
 
-    // ============== medium (4x2) ==============
+    // ============== medium (2x3) ==============
     private fun renderMedium(
         context: Context,
         @Suppress("UNUSED_PARAMETER") appWidgetId: Int,
@@ -92,12 +95,13 @@ object WidgetLayoutBuilder {
         rv.setOnClickPendingIntent(rowId, openAppIntent(context, s.providerId))
     }
 
-    // ============== large (4x4) ==============
+    // ============== large (2x4) ==============
     private fun renderLarge(
         context: Context,
         appWidgetId: Int,
         rv: RemoteViews,
         data: List<UsageSnapshot>,
+        themeId: String?,
     ) {
         rv.setTextViewText(R.id.widget_header, context.getString(R.string.widget_desc_large))
         rv.setTextViewText(
@@ -107,6 +111,8 @@ object WidgetLayoutBuilder {
         // ListView 绑定 RemoteViewsService
         val serviceIntent = Intent(context, UsageRemoteViewsService::class.java).apply {
             putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+            // 主题 id 传给 Factory 给列表行着色
+            putExtra("theme", themeId ?: "")
             // 把数据通过 Intent 传给 Service（data 是 Parcelable 不行，直接传 List<String>）
             putExtra("snapshots_count", data.size)
             data.forEachIndexed { idx, s ->
@@ -172,9 +178,9 @@ object WidgetLayoutBuilder {
         }
     }
 
-    private fun subLabelFor(s: UsageSnapshot): String = when {
+    private fun subLabelFor(context: Context, s: UsageSnapshot): String = when {
         s.isCodingPlan -> "5H"
-        else -> "余额"
+        else -> context.getString(R.string.widget_balance)
     }
 
     private fun formatRowValue(s: UsageSnapshot): String {

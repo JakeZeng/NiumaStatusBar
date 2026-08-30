@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  4x4 大组件：FrameLayout 容器内放 ListView + empty TextView，
+  2x4 大组件：FrameLayout 容器内放 ListView + empty TextView，
   使 RemoteViews.setEmptyView 能正常切换可见性。
   容器 ID 仍是 widget_root；ListView 用系统约定的 @android:id/list。
 -->

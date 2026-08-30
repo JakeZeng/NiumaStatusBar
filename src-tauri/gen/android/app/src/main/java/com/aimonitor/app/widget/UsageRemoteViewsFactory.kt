@@ -31,12 +31,14 @@ class UsageRemoteViewsFactory(
     )
 
     private var rows: List<Row> = emptyList()
+    private var themeId: String = ""
 
     override fun onCreate() {
         // nothing
     }
 
     override fun onDataSetChanged() {
+        themeId = seedIntent.getStringExtra("theme") ?: ""
         val count = seedIntent.getIntExtra("snapshots_count", 0)
         val out = ArrayList<Row>(count)
         for (i in 0 until count) {
@@ -62,6 +64,7 @@ class UsageRemoteViewsFactory(
         }
         val row = rows[position]
         val rv = RemoteViews(context.packageName, R.layout.widget_large_list_item)
+        WidgetTheme.applyRow(rv, themeId)
         rv.setTextViewText(R.id.widget_row_name, row.name)
         rv.setTextViewText(R.id.widget_row_value, row.value)
         rv.setImageViewResource(

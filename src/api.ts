@@ -127,6 +127,10 @@ export const api = {
   windowHideToTray: () => invoke('window_hide_to_tray'),
   appQuit: () => invoke('app_quit'),
 
+  // 主题偏好（持久化到后端 settings 表，供 Android 桌面组件读取配色）
+  setAppTheme: (theme: 'cyberpunk' | 'wuxia' | 'guoman') =>
+    invoke('set_app_theme', { theme }),
+
   // 应用日志
   queryLogs: (q: LogQuery) => invoke<LogEntry[]>('query_logs', { q }),
   clearLogs: () => invoke<void>('clear_logs'),

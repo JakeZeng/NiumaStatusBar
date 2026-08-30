@@ -20,6 +20,30 @@ object WidgetDataReader {
     private const val DB_RELATIVE = "ai-model-monitor/data.db"
 
     /**
+     * 读取 App 当前主题（settings 表 key=app_theme，由前端 ThemeManager
+     * 经 set_app_theme 写入）。未设置/读取失败时返回 null，widget 回退
+     * 到系统明暗配色。
+     */
+    fun appTheme(context: Context): String? {
+        val dbPath = File(context.dataDir, DB_RELATIVE)
+        if (!dbPath.exists()) return null
+        return try {
+            SQLiteDatabase.openDatabase(
+                dbPath.absolutePath,
+                /* factory = */ null,
+                SQLiteDatabase.OPEN_READONLY
+            ).use { db ->
+                db.rawQuery("SELECT value FROM settings WHERE key = 'app_theme'", null).use { c ->
+                    if (c.moveToFirst()) c.getString(0) else null
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "read app_theme failed", e)
+            null
+        }
+    }
+
+    /**
      * 取所有 enabled providers 的最新 usage_history 行。
      * 返回按 providerName 升序。
      */
