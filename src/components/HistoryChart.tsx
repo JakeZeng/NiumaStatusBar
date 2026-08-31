@@ -94,7 +94,7 @@ export function HistoryChart({ providerId, providerName, providerType, refreshIn
   const currentRange = TIME_RANGES.find(r => r.key === range)!;
 
   return (
-    <div className="bg-[var(--bg-card)] rounded-xl border border-[var(--border-color)] 
+    <div className="history-chart bg-[var(--bg-card)] rounded-xl border border-[var(--border-color)]
                     shadow-[var(--shadow-card)] p-5">
       {/* Header */}
       <div className="flex items-center justify-between mb-4 gap-2">

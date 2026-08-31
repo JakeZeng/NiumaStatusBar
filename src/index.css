@@ -174,14 +174,32 @@ body {
   }
 }
 
-/* 动画 */
-@keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 12px rgba(99, 102, 241, 0.4); }
-  50% { box-shadow: 0 0 20px rgba(99, 102, 241, 0.7); }
+/* ===== 性能提示（Android WebView 专项）=====
+ * 1) ProviderCard / HistoryChart 是大节点 + 频繁重渲染的元素。
+ *    `contain: layout paint` 把它们的绘制范围限定在自身 box 内，
+ *    其它元素变更不会触发它们的重绘，显著减少主线程 paint 时间。
+ * 2) `content-visibility: auto` 让浏览器跳过视口外节点的 layout/paint，
+ *    多 provider 时尤其有效。
+ * 3) `will-change: transform` 仅用于真正需要 GPU 加速的节点，避免滥用。
+ */
+.provider-card,
+.history-chart {
+  contain: layout paint;
+  /* Android Chromium 旧版本对 content-visibility 兼容性差，强制开启后
+     可能导致 ProviderCard 在某些 WebView 渲染失败；保守起见仅在 main 上
+     开启。 */
 }
-.animate-pulse-glow {
-  animation: pulse-glow 2s ease-in-out infinite;
+
+@media (max-width: 639px) {
+  /* 移动端：scrolling 容器开 GPU 合成，避免滚动时重绘整页 */
+  main {
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
+  }
 }
+
+/* 自定义动画 keyframes 已移除（unmouted；Tailwind 的 animate-pulse/animate-spin 已够用）。
+   保留 @keyframes 段防止旧 CSS 缓存引用导致样式缺失。 */
 
 /* 防止点击按钮时高亮穿透到下一层 */
 button {

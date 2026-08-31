@@ -133,11 +133,10 @@ function ProviderCardImpl({ provider, onDelete }: Props) {
     : 0;
 
   return (
-    <div className={`relative overflow-hidden rounded-xl p-3 sm:p-4 lg:p-5
-                    bg-[var(--bg-card)] border transition-all duration-300
-                    backdrop-blur-md
+    <div className={`provider-card relative overflow-hidden rounded-xl p-3 sm:p-4 lg:p-5
+                    bg-[var(--bg-card)] border transition-colors duration-150
                     ${provider.isEnabled
-                      ? 'border-[var(--border-color)] shadow-[var(--shadow-card)] hover:shadow-[var(--glow-primary)]'
+                      ? 'border-[var(--border-color)] shadow-[var(--shadow-card)]'
                       : 'border-[var(--border-color)]/40 opacity-60 grayscale'}`}>
 
       {!provider.isEnabled && (

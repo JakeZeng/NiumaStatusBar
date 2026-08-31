@@ -7,6 +7,7 @@ import {
 import { listen } from '@tauri-apps/api/event';
 import { api, type LogEntry, type LogLevel, type LogCategory, type LogQuery } from '../api';
 import { ModalBackdrop } from './ModalBackdrop';
+import { isCoarsePointer } from '../lib/device';
 
 interface Props {
   open: boolean;
@@ -410,8 +411,8 @@ export const LogViewer = memo(function LogViewer({ open, onClose }: Props) {
 
         {/* Clear confirm overlay */}
         {confirmingClear && (
-          <div className="absolute inset-0 z-[70] bg-black/60 backdrop-blur-sm
-                          flex items-center justify-center p-4">
+          <div className={`absolute inset-0 z-[70] bg-black/60 ${isCoarsePointer() ? '' : 'backdrop-blur-sm'}
+                          flex items-center justify-center p-4`}>
             <div className="bg-[var(--bg-card)] border border-[var(--border-color)]
                             rounded-xl p-6 max-w-sm w-full shadow-2xl">
               <h3 className="text-base font-bold text-[var(--text-primary)] mb-2">

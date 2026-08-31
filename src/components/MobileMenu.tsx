@@ -80,7 +80,7 @@ export function MobileMenu({ onOpenHub, onImportExport, onOpenLogs }: Props) {
       {open && (
         <div className="absolute right-0 mt-2 w-64 rounded-xl
                         bg-[var(--bg-card)] border border-[var(--border-color)]
-                        shadow-2xl backdrop-blur-lg z-50 overflow-hidden
+                        shadow-xl z-50 overflow-hidden
                         max-h-[80vh] overflow-y-auto">
           {subPage === 'main' && (
             <div className="py-1">

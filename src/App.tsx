@@ -165,8 +165,8 @@ export default function App() {
     <div className="min-h-screen text-[var(--text-primary)]">
       <ThemedBackground theme={theme} />
 
-      <header className="sticky top-0 z-40 backdrop-blur-md
-                        bg-[var(--bg-card)]/80 border-b border-[var(--border-color)]
+      <header className="sticky top-0 z-40
+                        bg-[var(--bg-card)]/95 border-b border-[var(--border-color)]
                         safe-top">
         <div className="mx-auto w-full max-w-screen-2xl px-3 sm:px-6 lg:px-10 py-2 sm:py-3
                         flex items-center justify-between gap-2">
