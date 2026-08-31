@@ -954,45 +954,22 @@ jobs:
         run: |
           set -e
           ROOT=src-tauri/gen/android
-          # `tauri android init --ci` runs after `rm -rf gen/android`, so every
-          # file committed under gen/android is wiped and only the Tauri template
-          # is regenerated. The home-screen AppWidget sources (widget Kotlin
-          # package, widget_* layouts/drawables/values/xml, the manifest
-          # <receiver>/<service> entries, proguard keep rule, and the
-          # MainActivity click-through handling) are NOT part of that template,
-          # so restore them from the tagged commit.
-          git checkout HEAD -- \
-            "$ROOT/app/src/main/java/com/aimonitor/app/widget" \
-            "$ROOT/app/src/main/res/xml/widget_provider_info_small.xml" \
-            "$ROOT/app/src/main/res/xml/widget_provider_info_medium.xml" \
-            "$ROOT/app/src/main/res/xml/widget_provider_info_large.xml" \
-            "$ROOT/app/src/main/res/layout/widget_small.xml" \
-            "$ROOT/app/src/main/res/layout/widget_medium.xml" \
-            "$ROOT/app/src/main/res/layout/widget_large.xml" \
-            "$ROOT/app/src/main/res/layout/widget_large_list_item.xml" \
-            "$ROOT/app/src/main/res/layout/widget_loading.xml" \
-            "$ROOT/app/src/main/res/drawable/widget_background.xml" \
-            "$ROOT/app/src/main/res/drawable/widget_progress_fill.xml" \
-            "$ROOT/app/src/main/res/drawable/widget_progress_track.xml" \
-            "$ROOT/app/src/main/res/drawable/widget_refresh_button.xml" \
-            "$ROOT/app/src/main/res/drawable/widget_status_dot.xml" \
-            "$ROOT/app/src/main/res/drawable/widget_status_dot_disabled.xml" \
-            "$ROOT/app/src/main/res/drawable/widget_status_dot_error.xml" \
-            "$ROOT/app/src/main/res/drawable/widget_background_cyberpunk.xml" \
-            "$ROOT/app/src/main/res/drawable/widget_background_wuxia.xml" \
-            "$ROOT/app/src/main/res/drawable/widget_background_guoman.xml" \
-            "$ROOT/app/src/main/res/values/widget_colors.xml" \
-            "$ROOT/app/src/main/res/values/widget_strings.xml" \
-            "$ROOT/app/src/main/res/values-night/widget_colors.xml" \
-            "$ROOT/app/src/main/res/values-zh/widget_strings.xml" \
-            "$ROOT/app/src/main/AndroidManifest.xml" \
-            "$ROOT/app/proguard-rules.pro"
+          # v0.1.37 起 widget 源已搬到 src-tauri/widget-patches/，
+          # 在更早的 'Apply 1x2 widget patches' 步骤里 cp -r 已经覆盖了 gen/android/。
+          # 这里只需要恢复 MainActivity.kt（仍在 gen/android/）+ 验证最终态。
+          # 旧的 git checkout ... -- widget_*.xml 等路径已经不存在（v0.1.37 删除），
+          # 若执行会报 "error: pathspec ... did not match any file(s) known to git"
+          # 然后整个 job fail。
 
           # MainActivity.kt carries the widget click-through intent handling.
           # Restore our version, then RE-APPLY the WRY 0.55.1 `@Keep override
           # var id` injection (the earlier MainActivity sed step ran against
           # the init-generated template, which this checkout just replaced).
           MAIN_ACTIVITY="$ROOT/app/src/main/java/com/aimonitor/app/MainActivity.kt"
+          if [ -f "$ROOT/app/src/main/java/com/aimonitor/app/MainActivity.kt.orig" ]; then
+            # apply 1x2 patches 的早期版本可能已备份；忽略
+            :
+          fi
           git checkout HEAD -- "$MAIN_ACTIVITY"
           if ! grep -q '^  override var id: Int = 0$' "$MAIN_ACTIVITY"; then
             if ! grep -q 'import androidx.annotation.Keep' "$MAIN_ACTIVITY"; then
@@ -1001,9 +978,10 @@ jobs:
             sed -i 's|^}$|  @Keep\n  override var id: Int = 0\n}|' "$MAIN_ACTIVITY"
           fi
 
-          echo "--- widget sources restored ---"
+          echo "--- widget sources (from widget-patches/, applied earlier) ---"
           find "$ROOT/app/src/main/java/com/aimonitor/app/widget" -type f | sort
           echo "manifest receiver count: $(grep -c 'UsageWidgetProvider' "$ROOT/app/src/main/AndroidManifest.xml")"
+          echo "(should be 1 — only UsageWidgetProvider after v0.1.37)"
 
       - name: Make gradlew executable
         run: |
@@ -1113,12 +1091,12 @@ jobs:
           echo "--- widget Kotlin classes packaged in APK ---"
           unzip -l "$APK" | grep -i "widget" || true
           echo "-----------------------------------------------"
-          for cls in UsageWidgetProviderSmall UsageWidgetProviderMedium UsageWidgetProviderLarge; do
+          for cls in UsageWidgetProvider; do
             if grep -Fq "$cls" /tmp/apk-manifest.txt; then
               echo "OK: $cls present"
             else
               echo "FATAL: $cls missing from APK manifest — widget restore step is incomplete" >&2
-              echo "(check the 'Restore home-screen widget' step log above for 'manifest receiver count:' — should be 3)" >&2
+              echo "(check the 'Restore home-screen widget' step log above for 'manifest receiver count:' — should be 1 after v0.1.37)" >&2
               exit 1
             fi
           done
