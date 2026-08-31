@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  1x2 横条 widget（1 行高 × 2 列宽，约 180dp × 90dp）：
+  - 左侧：供应商名 + 状态点
+  - 中部：主数值（余额或 Coding Plan 周期百分比）
+  - 右侧：副标签 / 更新时间戳
+  整个 widget 水平铺开，适合 launcher 顶部状态条。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:background="@drawable/widget_background"
+    android:padding="8dp">
+
+    <!-- 左：状态点 -->
+    <ImageView
+        android:id="@+id/widget_status_dot"
+        android:layout_width="10dp"
+        android:layout_height="10dp"
+        android:src="@drawable/widget_status_dot"
+        android:contentDescription="@string/widget_status_ok" />
+
+    <!-- 中左：供应商名（限定宽度，超出 ellipsize） -->
+    <TextView
+        android:id="@+id/widget_provider_name"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginStart="8dp"
+        android:textColor="@color/widget_text_primary"
+        android:textSize="13sp"
+        android:textStyle="bold"
+        android:singleLine="true"
+        android:ellipsize="end"
+        tools:text="Provider" />
+
+    <!-- 中右：主数值 -->
+    <TextView
+        android:id="@+id/widget_big_number"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:textColor="@color/widget_text_primary"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:singleLine="true"
+        tools:text="¥128.50" />
+
+    <!-- 副标签（Coding Plan 显示周期、余额型显示"余额"） -->
+    <TextView
+        android:id="@+id/widget_sub_label"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="4dp"
+        android:textColor="@color/widget_text_secondary"
+        android:textSize="10sp"
+        android:singleLine="true"
+        tools:text="余额" />
+
+    <!-- 隐藏字段（保留以复用 renderSmall 中的 setTextViewText 调用） -->
+    <TextView
+        android:id="@+id/widget_updated_at"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:visibility="gone" />
+</LinearLayout>

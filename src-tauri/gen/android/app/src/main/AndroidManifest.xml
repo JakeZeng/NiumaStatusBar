@@ -41,50 +41,20 @@
         </provider>
 
         <!-- ===== 桌面组件（AppWidget）=====
-             三个独立 Receiver 让启动器的"小组件"面板里看到三个独立入口；
-             各自指向不同 layout，便于区分渲染逻辑。
+             1x2 横条 widget（1 行高 × 2 列宽）。v0.1.37 起只发布一个尺寸，
+             早期 2x2 / 2x3 / 2x4 三种 receiver 全部移除。
              widget 进程通过 SQLite 直读与主进程共享 usage_history 数据；
              主进程 storage.rs 已启用 WAL + busy_timeout 避免锁竞争。 -->
         <receiver
-            android:name=".widget.UsageWidgetProviderSmall"
+            android:name=".widget.UsageWidgetProvider"
             android:exported="true"
-            android:label="@string/widget_label_small">
+            android:label="@string/widget_label_one">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
-                android:resource="@xml/widget_provider_info_small" />
+                android:resource="@xml/widget_provider_info_1x2" />
         </receiver>
-
-        <receiver
-            android:name=".widget.UsageWidgetProviderMedium"
-            android:exported="true"
-            android:label="@string/widget_label_medium">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_provider_info_medium" />
-        </receiver>
-
-        <receiver
-            android:name=".widget.UsageWidgetProviderLarge"
-            android:exported="true"
-            android:label="@string/widget_label_large">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_provider_info_large" />
-        </receiver>
-
-        <!-- RemoteViewsService：仅大尺寸列表型组件使用 -->
-        <service
-            android:name=".widget.UsageRemoteViewsService"
-            android:exported="false"
-            android:permission="android.permission.BIND_REMOTEVIEWS" />
     </application>
 </manifest>

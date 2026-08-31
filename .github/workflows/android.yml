@@ -146,6 +146,40 @@ jobs:
           cd ..
           pnpm tauri android init --ci
 
+      - name: Apply 1x2 widget patches
+        run: |
+          set -e
+          # 与 release.yml 相同：cp widget-patches/ 覆盖 init 生成的默认内容，
+          # 然后 sed 收尾 AndroidManifest 删 3 个旧 receiver + RemoteViewsService。
+          cp -r src-tauri/widget-patches/. src-tauri/gen/android/
+          python3 - <<'PY'
+          import re, pathlib
+          p = pathlib.Path('src-tauri/gen/android/app/src/main/AndroidManifest.xml')
+          text = p.read_text()
+          text = re.sub(
+              r'\s*<receiver\s+android:name="\.widget\.UsageWidgetProvider(Small|Medium|Large)"[^>]*>.*?</receiver>',
+              '\n',
+              text,
+              flags=re.DOTALL,
+          )
+          text = re.sub(
+              r'\s*<!--\s*RemoteViewsService.*?</service>',
+              '',
+              text,
+              flags=re.DOTALL,
+          )
+          text = re.sub(
+              r'\s*<service\s+android:name="\.widget\.UsageRemoteViewsService"[^>]*>.*?</service>',
+              '',
+              text,
+              flags=re.DOTALL,
+          )
+          text = re.sub(r'@string/widget_label_(small|medium|large)', '@string/widget_label_one', text)
+          text = re.sub(r'@string/widget_desc_(small|medium|large)', '@string/widget_desc_one', text)
+          p.write_text(text)
+          print("manifest patched: removed 3 receivers + service, normalized string refs")
+          PY
+
       - name: Disable app-module BuildConfig generation
         run: |
           # tauri-cli 2.11's `tauri android init --ci` regenerates

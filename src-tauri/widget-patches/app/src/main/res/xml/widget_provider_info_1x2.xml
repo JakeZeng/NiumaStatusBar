@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 1x2 横条 widget：1 行高 × 2 列宽，固定大小，不允许调整 -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="180dp"
+    android:minHeight="40dp"
+    android:targetCellWidth="2"
+    android:targetCellHeight="1"
+    android:widgetCategory="home_screen"
+    android:initialLayout="@layout/widget_1x2"
+    android:previewLayout="@layout/widget_1x2"
+    android:resizeMode="none"
+    android:description="@string/widget_desc_one"
+    android:updatePeriodMillis="1800000" />
