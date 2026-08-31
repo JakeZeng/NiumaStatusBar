@@ -3,6 +3,7 @@ package com.aimonitor.app.widget
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
+import android.os.Bundle
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -12,7 +13,11 @@ import kotlinx.coroutines.launch
  * 三种尺寸共享的基类。子类（Small/Medium/Large）只是 manifest 区分用。
  *
  * onUpdate 由系统在 updatePeriodMillis=30min 时触发（Android 限制最小值，
- * 无前台服务无法更短）。同时响应 onAppWidgetOptionsChanged（用户拖拽调整大小）。
+ * 无前台服务无法更短）。
+ *
+ * 所有 manifest 都设了 resizeMode="none"（v0.1.36 起），用户长按 widget
+ * 不会进入调整大小模式；onAppWidgetOptionsChanged 仅在 launcher
+ * 主动调用 updateAppWidgetOptions 时才会触发，日常不会进。
  */
 abstract class BaseUsageWidgetProvider : AppWidgetProvider() {
 
@@ -31,10 +36,11 @@ abstract class BaseUsageWidgetProvider : AppWidgetProvider() {
         context: Context,
         appWidgetManager: AppWidgetManager,
         appWidgetId: Int,
-        newOptions: android.os.Bundle,
+        newOptions: Bundle,
     ) {
         super.onAppWidgetOptionsChanged(context, appWidgetManager, appWidgetId, newOptions)
-        // 大小调整时强制刷新一次以保证 layout 与新尺寸匹配
+        // resizeMode="none" 下用户无法拖拽；该回调仅在 launcher 主动更新
+        // options 时触发。仍按子类 hardcode 的 size 重建一次保证一致。
         refreshAll(context, appWidgetManager, intArrayOf(appWidgetId))
     }
 
