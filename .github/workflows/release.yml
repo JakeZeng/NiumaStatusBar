@@ -382,6 +382,22 @@ jobs:
               # class closing brace (`^}$` at 0 indent).
               sed -i 's|^}$|  @Keep\n  override var id: Int = 0\n}|' "$MAIN_ACTIVITY"
             fi
+            # 4. Drop tauri-cli 2.11's default `setLayerType(SOFTWARE, ...)`
+            #    in onWebViewCreate. Software rendering forces the entire
+            #    WebView (HTML/CSS/JS) to run on the CPU: every animation,
+            #    transform, box-shadow, backdrop-filter lands in the main
+            #    thread's paint path, and taps are queued behind the
+            #    compositor. It was originally added to work around a
+            #    MuMu emulator GPU compatibility bug ("tile memory limits
+            #    exceeded" -> white screen). Real Android devices (which is
+            #    our only supported target as of v0.1.35) have a working
+            #    GPU; we want hardware acceleration by default. Android
+            #    automatically falls back to software rendering on devices
+            #    that lack a usable GPU, so we don't need to opt out here.
+            if grep -q 'setLayerType(View.LAYER_TYPE_SOFTWARE' "$MAIN_ACTIVITY"; then
+              sed -i '/webView\.setLayerType(View\.LAYER_TYPE_SOFTWARE, null)/d' "$MAIN_ACTIVITY"
+              echo "Removed tauri-cli default setLayerType(LAYER_TYPE_SOFTWARE) in $MAIN_ACTIVITY"
+            fi
             echo "--- MainActivity.kt (after WRY getId() override) ---"
             cat "$MAIN_ACTIVITY"
           fi

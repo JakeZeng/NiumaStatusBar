@@ -22,9 +22,13 @@ class MainActivity : TauriActivity() {
   }
 
   override fun onWebViewCreate(webView: WebView) {
-    // MuMu 模拟器 GPU 兼容性差，强制软件渲染避免 tile memory limits exceeded 导致白屏
-    webView.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
-    // 父类 WryActivity 没有暴露 webView 访问器；此处缓存供 widget 跳转注入 JS 用
+    // 走默认硬件加速（View.LAYER_TYPE_HARDWARE）。原先为 MuMu 模拟器兼容性
+    // 强制软件渲染，但软件渲染下 WebView 所有 CSS（动画/transform/box-shadow/
+    // backdrop-filter）都走 CPU 合成，实机点击/滚动卡顿严重。MuMu 兼容性问题
+    // 由 v0.1.35 起不再纳入考量。
+    //
+    // Android 系统会按需自动降级为软件渲染（无 GPU 设备）；无需在 Kotlin 侧
+    // 主动 setLayerType。
     webViewRef = webView
     // WebView 就绪后补一次派发
     dispatchPendingProviderId()

@@ -295,6 +295,12 @@ jobs:
               # class closing brace (`^}$` at 0 indent).
               sed -i 's|^}$|  @Keep\n  override var id: Int = 0\n}|' "$MAIN_ACTIVITY"
             fi
+            # Drop tauri-cli 2.11's default `setLayerType(SOFTWARE, ...)`
+            # in onWebViewCreate. See release.yml for the rationale.
+            if grep -q 'setLayerType(View.LAYER_TYPE_SOFTWARE' "$MAIN_ACTIVITY"; then
+              sed -i '/webView\.setLayerType(View\.LAYER_TYPE_SOFTWARE, null)/d' "$MAIN_ACTIVITY"
+              echo "Removed tauri-cli default setLayerType(LAYER_TYPE_SOFTWARE) in $MAIN_ACTIVITY"
+            fi
             echo "--- MainActivity.kt (after WRY getId() override) ---"
             cat "$MAIN_ACTIVITY"
           fi
