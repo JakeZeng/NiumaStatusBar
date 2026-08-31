@@ -15,8 +15,11 @@ import com.aimonitor.app.R
  * 所有 "setText / setImageViewResource / setViewVisibility / setOnClickPendingIntent"
  * 之外的操作一律不能使用。
  *
- * 早期版本（v0.1.18–v0.1.36）支持 SMALL/MEDIUM/LARGE 三种 size；v0.1.37 起
- * 仅发布 1x2 一种 widget，这里也简化为无 size 参数的 build。
+ * v0.1.38 起 layout 为 vertical 两行：
+ *   第 1 行：状态点 + 供应商名（左）+ 主数值（右）
+ *   第 2 行：quota 补充信息
+ *           - Coding Plan：5h 剩余 % │ 周剩余
+ *           - 余额型：余额 + 已用百分比
  */
 object WidgetLayoutBuilder {
 
@@ -37,8 +40,9 @@ object WidgetLayoutBuilder {
   }
 
   /**
-   * 1x2 渲染逻辑：单供应商横条，左中右依次为「状态点 / 供应商名 / 主数值 / 副标签」。
-   * Coding Plan 显示周期百分比；余额型显示余额金额。
+   * 1x2 渲染逻辑：
+   * - 第 1 行：状态点 + provider 名 + 主数值（balance / Coding Plan 最小周期 %）
+   * - 第 2 行：quota 补充（multi-period summary）
    */
   private fun renderOne(context: Context, rv: RemoteViews, top: UsageSnapshot) {
     rv.setTextViewText(R.id.widget_provider_name, top.providerName)
@@ -68,21 +72,38 @@ object WidgetLayoutBuilder {
   }
 
   /**
-   * 副标签：
-   * - Coding Plan：显示周期 "5h" / "week" / "month"
-   * - 余额型：显示 "余额"
+   * 第 2 行 quota 补充信息：
+   * - Coding Plan：拼接 "5H X% │ 周 X"（取 5h 百分比和周剩余数）
+   * - 余额型：拼接 "余额 ¥128.50 │ 已用 35%"
+   * - 任意一方缺失则省略
    */
   private fun subLabelFor(context: Context, s: UsageSnapshot): String {
     if (s.isCodingPlan) {
-      val period = s.smallestPeriod()
-      return when (period?.period) {
-        "5h" -> context.getString(R.string.widget_5h)
-        "week" -> context.getString(R.string.widget_week)
-        "month" -> context.getString(R.string.widget_month)
-        else -> ""
+      val parts = mutableListOf<String>()
+      // 5h 剩余百分比
+      s.quota5hRemainingPercent?.let { p ->
+        parts += "5H ${p.toInt()}%"
+      }
+      // 周剩余（绝对值）
+      s.quotaWeekRemaining?.let { v ->
+        parts += "${context.getString(R.string.widget_week)} ${formatBalance(v)}"
+      }
+      return parts.joinToString("  │  ")
+    }
+    // 余额型
+    val parts = mutableListOf<String>()
+    s.balance?.let { v ->
+      parts += "${context.getString(R.string.widget_balance)} ${s.currencySymbol()}${formatBalance(v)}"
+    }
+    s.balanceLimit?.let { limit ->
+      s.balanceUsed?.let { used ->
+        if (limit > 0) {
+          val pct = (used / limit * 100).toInt()
+          parts += "已用 $pct%"
+        }
       }
     }
-    return context.getString(R.string.widget_balance)
+    return parts.joinToString("  │  ")
   }
 
   private fun renderEmpty(context: Context, rv: RemoteViews) {

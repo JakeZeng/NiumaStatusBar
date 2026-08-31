@@ -1,67 +1,77 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  1x2 横条 widget（1 行高 × 2 列宽，约 180dp × 90dp）：
-  - 左侧：供应商名 + 状态点
-  - 中部：主数值（余额或 Coding Plan 周期百分比）
-  - 右侧：副标签 / 更新时间戳
-  整个 widget 水平铺开，适合 launcher 顶部状态条。
+  1x2 widget（1 行高 × 2 列宽，水平条形状，约 180dp × 40dp）：
+
+  内部 vertical 两行：
+    第 1 行：状态点 + 供应商名（左侧）+ 主数值（右侧，余额或 Coding Plan 周期 %）
+    第 2 行：quota 补充信息
+              - Coding Plan：5h 剩余 % / 周剩余 / 月剩余（取前 2 项，用 │ 分隔）
+              - 余额型：余额 + 使用百分比
+
+  整个 widget 横铺 launcher 一行，节省垂直空间。
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="horizontal"
-    android:gravity="center_vertical"
+    android:orientation="vertical"
     android:background="@drawable/widget_background"
-    android:padding="8dp">
+    android:paddingHorizontal="10dp"
+    android:paddingVertical="4dp">
 
-    <!-- 左：状态点 -->
-    <ImageView
-        android:id="@+id/widget_status_dot"
-        android:layout_width="10dp"
-        android:layout_height="10dp"
-        android:src="@drawable/widget_status_dot"
-        android:contentDescription="@string/widget_status_ok" />
-
-    <!-- 中左：供应商名（限定宽度，超出 ellipsize） -->
-    <TextView
-        android:id="@+id/widget_provider_name"
-        android:layout_width="0dp"
+    <!-- 第 1 行：状态点 + 供应商名 + 主数值 -->
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:layout_marginStart="8dp"
-        android:textColor="@color/widget_text_primary"
-        android:textSize="13sp"
-        android:textStyle="bold"
-        android:singleLine="true"
-        android:ellipsize="end"
-        tools:text="Provider" />
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
 
-    <!-- 中右：主数值 -->
-    <TextView
-        android:id="@+id/widget_big_number"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="8dp"
-        android:textColor="@color/widget_text_primary"
-        android:textSize="16sp"
-        android:textStyle="bold"
-        android:singleLine="true"
-        tools:text="¥128.50" />
+        <ImageView
+            android:id="@+id/widget_status_dot"
+            android:layout_width="8dp"
+            android:layout_height="8dp"
+            android:src="@drawable/widget_status_dot"
+            android:contentDescription="@string/widget_status_ok" />
 
-    <!-- 副标签（Coding Plan 显示周期、余额型显示"余额"） -->
+        <TextView
+            android:id="@+id/widget_provider_name"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="6dp"
+            android:textColor="@color/widget_text_primary"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:singleLine="true"
+            android:ellipsize="end"
+            tools:text="Provider" />
+
+        <TextView
+            android:id="@+id/widget_big_number"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:textColor="@color/widget_text_primary"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:singleLine="true"
+            tools:text="¥128.50" />
+    </LinearLayout>
+
+    <!-- 第 2 行：quota 补充信息（Coding Plan 显示 5h% + 周%，余额型显示余额 + 使用%） -->
     <TextView
         android:id="@+id/widget_sub_label"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginStart="4dp"
+        android:layout_marginTop="1dp"
         android:textColor="@color/widget_text_secondary"
         android:textSize="10sp"
         android:singleLine="true"
-        tools:text="余额" />
+        android:ellipsize="end"
+        tools:text="5H 78%  │  周 12.5" />
 
-    <!-- 隐藏字段（保留以复用 renderSmall 中的 setTextViewText 调用） -->
+    <!-- 隐藏字段（保留以复用 setTextViewText 调用） -->
     <TextView
         android:id="@+id/widget_updated_at"
         android:layout_width="0dp"
