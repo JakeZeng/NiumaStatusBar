@@ -16,10 +16,13 @@ import com.aimonitor.app.R
  * 之外的操作一律不能使用。
  *
  * v0.1.38 起 layout 为 vertical 两行：
- *   第 1 行：状态点 + 供应商名（左）+ 主数值（右）
+ *   第 1 行：状态点 + 供应商名（左）+ 主数值（中）+ 页码（右，多 provider 时显示）
  *   第 2 行：quota 补充信息
  *           - Coding Plan：5h 剩余 % │ 周剩余
  *           - 余额型：余额 + 已用百分比
+ *
+ * v0.1.39 起支持轮播：[build] 增加 [index] 参数，由前台 service 按固定间隔递增，
+ * 实现「在 1x2 横条上自动切换显示不同 provider」。单 provider 时不显示页码。
  */
 object WidgetLayoutBuilder {
 
@@ -27,13 +30,16 @@ object WidgetLayoutBuilder {
   fun build(
     context: Context,
     snapshots: List<UsageSnapshot>,
+    index: Int = 0,
     themeId: String? = null,
   ): RemoteViews {
     val rv = RemoteViews(context.packageName, R.layout.widget_1x2)
     if (snapshots.isEmpty()) {
       renderEmpty(context, rv)
     } else {
-      renderOne(context, rv, snapshots.first())
+      val safeIndex = index.mod(snapshots.size.coerceAtLeast(1))
+      val top = snapshots[safeIndex]
+      renderOne(context, rv, top, safeIndex, snapshots.size)
     }
     WidgetTheme.apply(rv, themeId)
     return rv
@@ -43,13 +49,27 @@ object WidgetLayoutBuilder {
    * 1x2 渲染逻辑：
    * - 第 1 行：状态点 + provider 名 + 主数值（balance / Coding Plan 最小周期 %）
    * - 第 2 行：quota 补充（multi-period summary）
+   * - 页码：仅当 total > 1 时显示 "(index+1)/total"，单 provider 时隐藏省空间
    */
-  private fun renderOne(context: Context, rv: RemoteViews, top: UsageSnapshot) {
+  private fun renderOne(
+    context: Context,
+    rv: RemoteViews,
+    top: UsageSnapshot,
+    index: Int,
+    total: Int,
+  ) {
     rv.setTextViewText(R.id.widget_provider_name, top.providerName)
     rv.setTextViewText(R.id.widget_big_number, formatBigNumber(top))
     rv.setTextViewText(R.id.widget_sub_label, subLabelFor(context, top))
     rv.setImageViewResource(R.id.widget_status_dot, statusDotFor(top))
     rv.setOnClickPendingIntent(R.id.widget_root, openAppIntent(context, top.providerId))
+
+    if (total > 1) {
+      rv.setTextViewText(R.id.widget_page_index, "${index + 1}/$total")
+      rv.setViewVisibility(R.id.widget_page_index, android.view.View.VISIBLE)
+    } else {
+      rv.setViewVisibility(R.id.widget_page_index, android.view.View.GONE)
+    }
   }
 
   /**

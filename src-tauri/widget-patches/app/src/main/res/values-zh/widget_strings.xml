@@ -19,4 +19,10 @@
     <string name="widget_balance">余额</string>
 
     <string name="widget_updated_at">更新于 %1$s</string>
+
+    <!-- 1x2 轮播前台服务（v0.1.39+） -->
+    <string name="widget_carousel_channel_name">小组件刷新</string>
+    <string name="widget_carousel_channel_desc">保持 1x2 小组件按 5 秒间隔轮播所有供应商</string>
+    <string name="widget_carousel_notif_title">粮草用量</string>
+    <string name="widget_carousel_notif_text">桌面小组件正在每 5 秒轮播供应商</string>
 </resources>

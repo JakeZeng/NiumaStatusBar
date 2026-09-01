@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- API 34+（Android 14）要求 foregroundServiceType=specialUse 时必须配套声明。 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
@@ -43,8 +45,11 @@
         <!-- ===== 桌面组件（AppWidget）=====
              1x2 横条 widget（1 行高 × 2 列宽）。v0.1.37 起只发布一个尺寸，
              早期 2x2 / 2x3 / 2x4 三种 receiver 全部移除。
+             v0.1.39 起横条轮播显示所有 enabled provider，每 5 秒切换一次。
              widget 进程通过 SQLite 直读与主进程共享 usage_history 数据；
-             主进程 storage.rs 已启用 WAL + busy_timeout 避免锁竞争。 -->
+             主进程 storage.rs 已启用 WAL + busy_timeout 避免锁竞争。
+             高频轮播由 [UsageWidgetCarouselService] 前台服务持有，规避系统
+             30 分钟 updatePeriodMillis 限制。 -->
         <receiver
             android:name=".widget.UsageWidgetProvider"
             android:exported="true"
@@ -56,5 +61,18 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_provider_info_1x2" />
         </receiver>
+
+        <!-- 1x2 widget 轮播服务：每 5 秒读 SQLite 渲染下一档 provider。
+             foregroundServiceType=specialUse 是因为 widget 轮播不属于
+             location/mediaProjection/dataSync 等任何一类标准 FGS 用途，
+             且不联网传输；property 文本在审核侧用于解释该用途。 -->
+        <service
+            android:name=".widget.UsageWidgetCarouselService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Periodic home-screen widget refresh: read locally cached usage_history and rotate the displayed provider every 5 seconds. No network transfer, no user data leaves the device." />
+        </service>
     </application>
 </manifest>

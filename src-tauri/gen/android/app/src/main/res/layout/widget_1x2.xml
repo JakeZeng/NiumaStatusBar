@@ -1,14 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  1x2 widget（1 行高 × 2 列宽，水平条形状，约 180dp × 40dp）：
+  1x2 widget（1 行高 × 2 列宽，水平条形状，约 160dp × 40dp）：
 
   内部 vertical 两行：
-    第 1 行：状态点 + 供应商名（左侧）+ 主数值（右侧，余额或 Coding Plan 周期 %）
+    第 1 行：状态点 + 供应商名（左侧）+ 主数值（中，余额或 Coding Plan 周期 %）+ 页码（右，多 provider 时显示）
     第 2 行：quota 补充信息
               - Coding Plan：5h 剩余 % / 周剩余 / 月剩余（取前 2 项，用 │ 分隔）
               - 余额型：余额 + 使用百分比
 
   整个 widget 横铺 launcher 一行，节省垂直空间。
+
+  v0.1.39 起：横条本身轮播所有 enabled provider，每 5 秒切换一次。
+  单 provider 时 widget_page_index 默认 gone，不显示。
+
+  v0.1.40 起：minWidth 从 180dp 调到 160dp，paddingHorizontal 从 10dp
+  调到 8dp。原因：180dp / 80dp/格 ≈ 2.25，老 launcher / 第三方 launcher
+  ceil 到 3 cells 显示为 1x3；160dp / 80dp/格 = 2 cells 稳定。
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
@@ -17,7 +24,7 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="@drawable/widget_background"
-    android:paddingHorizontal="10dp"
+    android:paddingHorizontal="8dp"
     android:paddingVertical="4dp">
 
     <!-- 第 1 行：状态点 + 供应商名 + 主数值 -->
@@ -57,6 +64,18 @@
             android:textStyle="bold"
             android:singleLine="true"
             tools:text="¥128.50" />
+
+        <!-- 轮播页码：多 provider 时显示 (1/3)，单 provider 时隐藏，省空间 -->
+        <TextView
+            android:id="@+id/widget_page_index"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:textColor="@color/widget_text_muted"
+            android:textSize="10sp"
+            android:singleLine="true"
+            android:visibility="gone"
+            tools:text="1/3" />
     </LinearLayout>
 
     <!-- 第 2 行：quota 补充信息（Coding Plan 显示 5h% + 周%，余额型显示余额 + 使用%） -->
