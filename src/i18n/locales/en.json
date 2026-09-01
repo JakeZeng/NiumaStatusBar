@@ -1,6 +1,6 @@
 {
   "app": {
-    "title": "AI Model Monitor",
+    "title": "粮草用量",
     "addProvider": "Add Provider",
     "noProviders": "No providers added yet",
     "noProvidersHint": "Click \"Add Provider\" in the top right to start"
@@ -26,7 +26,15 @@
     "presets": "Quick Presets",
     "save": "Save",
     "cancel": "Cancel",
-    "delete": "Delete"
+    "delete": "Delete",
+    "deleteConfirmTitle": "Delete {{name}}?",
+    "deleteConfirmMessage": "Polling will stop and related usage history will be removed. This cannot be undone.",
+    "deleteConfirm": "Delete",
+    "quotaLabel5h": "⏱ 5H Quota",
+    "quotaLabelWeek": "📅 Weekly Quota",
+    "quotaLabelMonth": "📆 Monthly Quota",
+    "quotaWaiting": "Waiting for quota data...",
+    "quotaTotalRemaining": "Total Remaining"
   },
   "chart": {
     "balanceTrend": "Balance Trend",
@@ -49,5 +57,43 @@
     "error": "Error",
     "checking": "Checking",
     "disabled": "Disabled"
+  },
+  "logs": {
+    "entry": "View Application Logs",
+    "title": "Logs",
+    "subtitle": "Inspect application logs with keyword and event range filters",
+    "search": "Search logs...",
+    "level": "Level",
+    "category": "Category",
+    "timeRange": "Time Range",
+    "loading": "Loading...",
+    "empty": "No logs",
+    "count": "{{count}} entries",
+    "reset": "Reset",
+    "cancel": "Cancel",
+    "pausedHint": "Paused – new logs are not added in real time",
+    "levels": {
+      "debug": "Debug",
+      "info": "Info",
+      "warn": "Warn",
+      "error": "Error"
+    },
+    "timeRanges": {
+      "1h": "1 hour",
+      "24h": "24 hours",
+      "7d": "7 days",
+      "all": "All"
+    },
+    "actions": {
+      "clear": "Clear",
+      "close": "Close",
+      "pause": "Pause",
+      "resume": "Resume",
+      "followLatest": "Follow latest"
+    },
+    "confirm": {
+      "clear": "Confirm clear",
+      "clearMessage": "Clear all logs? This operation cannot be undone."
+    }
   }
 }

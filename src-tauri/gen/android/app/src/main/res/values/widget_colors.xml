@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  桌面组件的配色覆盖。组件背景用 ?android:attr/colorBackground 加
+  alpha 0.85 营造半透明效果；文字色直接使用系统主题属性，
+  确保在任何桌面壁纸上都保持可读。
+-->
+<resources>
+    <color name="widget_bg">#E6FFFFFF</color>           <!-- light: 半透明白 -->
+    <color name="widget_divider">#1F000000</color>
+    <color name="widget_text_primary">#FF111111</color>
+    <color name="widget_text_secondary">#FF555555</color>
+    <color name="widget_text_muted">#FF888888</color>
+    <color name="widget_progress_track">#33000000</color>
+    <color name="widget_progress_fill">#FF1976D2</color>
+    <color name="widget_progress_warn">#FFE69500</color>
+    <color name="widget_status_ok">#FF2E7D32</color>
+    <color name="widget_status_error">#FFC62828</color>
+    <color name="widget_status_disabled">#FF9E9E9E</color>
+</resources>

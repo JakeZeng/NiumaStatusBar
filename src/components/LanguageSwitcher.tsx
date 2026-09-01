@@ -33,9 +33,9 @@ export function LanguageSwitcher() {
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-36 rounded-xl 
+        <div className="absolute right-0 mt-2 w-36 rounded-xl
                         bg-[var(--bg-card)] border border-[var(--border-color)]
-                        shadow-[var(--shadow-card)] backdrop-blur-lg z-50
+                        shadow-xl z-50
                         overflow-hidden">
           {LANGUAGES.map(lang => (
             <button

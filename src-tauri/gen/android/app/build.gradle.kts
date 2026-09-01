@@ -23,6 +23,7 @@ val tauriProperties = Properties().apply {
 android {
     compileSdk = 36
     namespace = "com.aimonitor.app"
+    ndkVersion = "27.0.12077973"
 
     signingConfigs {
         create("release") {
@@ -42,6 +43,12 @@ android {
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
+        ndk {
+            // 真机（小米等 ARM 设备）必须包含 arm64-v8a；armeabi-v7a 兼容旧机型；
+            // x86_64 保留给 MuMu 模拟器调试。仅打 x86_64 会导致 ARM 设备上
+            // 找不到 libai_model_monitor_lib.so 而直接闪退。
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        }
     }
     buildTypes {
         getByName("debug") {

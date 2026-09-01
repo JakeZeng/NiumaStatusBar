@@ -1,13 +1,14 @@
-import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
-import { useState, useEffect } from 'react';
+import { memo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CheckCircle, XCircle, RefreshCw, Settings } from 'lucide-react';
-import type { ProviderConfig, UsageStatus } from '../api';
+import { CheckCircle, XCircle, RefreshCw, Trash2 } from 'lucide-react';
+import type { ProviderConfig } from '../api';
+import { getCurrencySymbol } from '../lib/currency';
+import { formatRelativeReset } from '../lib/format';
+import { useStatusStore } from '../store/statusStore';
 
 interface Props {
   provider: ProviderConfig;
-  onEdit: (p: ProviderConfig) => void;
+  onDelete?: (p: ProviderConfig) => void;
 }
 
 interface QuotaRowProps {
@@ -15,13 +16,37 @@ interface QuotaRowProps {
   remaining: number | null | undefined;
   total: number | null | undefined;
   used: number | null | undefined;
+  remainingPercent?: number | null;
+  resetAt?: number | null;
 }
 
-function QuotaRow({ label, remaining, total, used }: QuotaRowProps) {
-  const hasData = remaining !== null && remaining !== undefined;
-  const percent = total && used !== null && used !== undefined && total > 0
-    ? (used / total) * 100
-    : 0;
+const QuotaRow = memo(function QuotaRow({
+  label, remaining, total, used, remainingPercent, resetAt,
+}: QuotaRowProps) {
+  const hasPercent = remainingPercent != null;
+  const hasTotalUsed =
+    total != null && total !== undefined && total > 0 &&
+    used != null && used !== undefined;
+  const hasRemaining =
+    !hasPercent && !hasTotalUsed &&
+    remaining != null && remaining !== undefined;
+  // 只有 total、没有 remaining/used/percent（比如火山方舟刚开通、未产生调用时仅返回 limit 头）
+  const hasTotalOnly =
+    !hasPercent && !hasTotalUsed && !hasRemaining &&
+    total != null && total !== undefined && total > 0;
+  const hasData = hasPercent || hasTotalUsed || hasRemaining || hasTotalOnly;
+
+  const percent = hasPercent
+    ? remainingPercent!
+    : hasTotalUsed
+      ? (used! / total!) * 100
+      : hasRemaining
+        ? Math.min(remaining!, 100)
+        : hasTotalOnly
+          ? 0
+          : 0;
+
+  const resetText = resetAt ? formatRelativeReset(resetAt) : '';
 
   return (
     <div className="space-y-1">
@@ -29,89 +54,78 @@ function QuotaRow({ label, remaining, total, used }: QuotaRowProps) {
         <span className="text-xs text-[var(--text-secondary)]">{label}</span>
         <span className="text-sm font-semibold text-[var(--text-primary)]">
           {hasData ? (
-            <>
-              <span className="text-[var(--color-primary)]">{Math.floor(remaining!)}</span>
-              <span className="text-[var(--text-muted)] text-xs"> / {Math.floor(total || 0)}</span>
-            </>
+            hasPercent ? (
+              <span className="text-[var(--color-primary)]">{remainingPercent!.toFixed(0)}%</span>
+            ) : hasTotalOnly ? (
+              <>
+                <span className="text-[var(--text-muted)]">总量 </span>
+                <span className="text-[var(--color-primary)]">{Math.floor(total!)}</span>
+              </>
+            ) : (
+              <>
+                <span className="text-[var(--color-primary)]">{Math.floor(remaining ?? 0)}</span>
+                <span className="text-[var(--text-muted)] text-xs"> / {Math.floor(total || 0)}</span>
+              </>
+            )
           ) : '--'}
         </span>
       </div>
       <div className="relative h-1.5 bg-[var(--bg-secondary)] rounded-full overflow-hidden">
         {hasData && (
           <div
-            className="absolute inset-y-0 left-0 bg-gradient-to-r 
+            className="absolute inset-y-0 left-0 bg-gradient-to-r
                        from-[var(--color-primary)] to-[var(--color-secondary)]
                        rounded-full transition-all duration-500"
             style={{ width: `${Math.min(percent, 100)}%` }}
           />
         )}
       </div>
+      {resetText && (
+        <div className="text-[10px] text-[var(--text-muted)] text-right">
+          {resetText}
+        </div>
+      )}
     </div>
   );
+});
+
+function StatusIcon({ loading, hasError }: { loading: boolean; hasError: boolean }) {
+  if (loading) return <RefreshCw className="w-5 h-5 text-[var(--color-warning)] animate-spin" />;
+  if (hasError) return <XCircle className="w-5 h-5 text-[var(--color-danger)]" />;
+  return <CheckCircle className="w-5 h-5 text-[var(--color-success)]" />;
 }
 
-export function ProviderCard({ provider, onEdit }: Props) {
+// ProviderCard 改为纯展示：状态从全局 store 订阅，刷新动作也走 store.fetchOne。
+// 这样 N 张卡只共享一份 status-update 事件，状态变化只触发相关卡片重渲染。
+function ProviderCardImpl({ provider, onDelete }: Props) {
   const { t } = useTranslation();
-  const [status, setStatus] = useState<UsageStatus | null>(null);
-  const [loading, setLoading] = useState(false);
+  // selector 精确订阅自身相关字段，避免无关 provider 状态变化导致本卡 re-render
+  const status = useStatusStore((s) => s.byId[provider.id]);
+  const loading = useStatusStore((s) => s.loadingById[provider.id] ?? false);
+  const fetchOne = useStatusStore((s) => s.fetchOne);
 
-  // 监听后端推送的状态更新
-  useEffect(() => {
-    const unlisten = listen<UsageStatus>('status-update', (event) => {
-      if (event.payload.provider_id === provider.id) {
-        setStatus(event.payload);
-        setLoading(false);
-      }
-    });
+  const handleFetch = useCallback(() => {
+    fetchOne(provider.id).catch(() => { /* 错误已在 store 内处理 */ });
+  }, [fetchOne, provider.id]);
 
-    return () => {
-      unlisten.then(fn => fn());
-    };
-  }, [provider.id]);
-
-  // 初始加载状态
-  useEffect(() => {
-    const loadStatus = async () => {
-      try {
-        const result = await invoke<UsageStatus | null>('get_provider_status', { id: provider.id });
-        if (result) {
-          setStatus(result);
-        }
-      } catch (err) {
-        console.error(err);
-      }
-    };
-    loadStatus();
-  }, [provider.id]);
-
-  const fetchStatus = async () => {
-    setLoading(true);
-    try {
-      const result = await invoke<UsageStatus>('fetch_provider_status', { id: provider.id });
-      setStatus(result);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const getStatusIcon = () => {
-    if (loading) return <RefreshCw className="w-5 h-5 text-[var(--color-warning)] animate-spin" />;
-    if (status?.last_error) return <XCircle className="w-5 h-5 text-[var(--color-danger)]" />;
-    return <CheckCircle className="w-5 h-5 text-[var(--color-success)]" />;
-  };
+  const handleDelete = useCallback(() => {
+    onDelete?.(provider);
+  }, [onDelete, provider]);
 
   // 判断是否使用 Coding Plan 多维度展示
-  const isCodingPlan = 
+  const isCodingPlan =
     provider.provider === 'minimax_coding' ||
     provider.provider === 'minimax_token' ||
     provider.provider === 'volcengine_coding' ||
     provider.provider === 'volcengine_token';
 
-  const hasQuota5h = status?.quota_5h_remaining !== null && status?.quota_5h_remaining !== undefined;
-  const hasQuotaWeek = status?.quota_week_remaining !== null && status?.quota_week_remaining !== undefined;
-  const hasQuotaMonth = status?.quota_month_remaining !== null && status?.quota_month_remaining !== undefined;
+  const hasQuota5h =
+    status?.quota_5h_remaining_percent != null ||
+    status?.quota_5h_remaining != null;
+  const hasQuotaWeek =
+    status?.quota_week_remaining_percent != null ||
+    status?.quota_week_remaining != null;
+  const hasQuotaMonth = status?.quota_month_remaining != null && status?.quota_month_remaining !== undefined;
 
   // 通用余额展示
   const usagePercent = status?.balance_limit && status.balance_used
@@ -119,46 +133,57 @@ export function ProviderCard({ provider, onEdit }: Props) {
     : 0;
 
   return (
-    <div className="relative overflow-hidden rounded-xl p-5 
-                    bg-[var(--bg-card)] border border-[var(--border-color)]
-                    shadow-[var(--shadow-card)]
-                    hover:shadow-[var(--glow-primary)] transition-all duration-300
-                    backdrop-blur-md">
+    <div className={`provider-card relative overflow-hidden rounded-xl p-3 sm:p-4 lg:p-5
+                    bg-[var(--bg-card)] border transition-colors duration-150
+                    ${provider.isEnabled
+                      ? 'border-[var(--border-color)] shadow-[var(--shadow-card)]'
+                      : 'border-[var(--border-color)]/40 opacity-60 grayscale'}`}>
 
-      <div className="absolute top-0 right-0 w-16 h-16 
+      {!provider.isEnabled && (
+        <div className="absolute top-2 right-2 px-2 py-0.5 text-[10px] sm:text-xs
+                        rounded-full bg-[var(--bg-overlay)] text-[var(--text-muted)]
+                        border border-[var(--border-color)] z-10">
+          已禁用
+        </div>
+      )}
+
+      <div className="absolute top-0 right-0 w-12 h-12 sm:w-16 sm:h-16
                       bg-gradient-to-bl from-[var(--color-primary)]/20 to-transparent
                       rounded-bl-full" />
-      
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
-          {getStatusIcon()}
-          <div>
-            <h3 className="font-bold text-lg text-[var(--text-primary)]">{provider.name}</h3>
-            <p className="text-xs text-[var(--text-secondary)] uppercase tracking-wider">
+
+      <div className="flex items-center justify-between mb-3 sm:mb-4">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <StatusIcon loading={loading} hasError={!!status?.last_error} />
+          <div className="min-w-0 flex-1">
+            <h3 className="font-bold text-sm sm:text-base text-[var(--text-primary)] truncate">{provider.name}</h3>
+            <p className="text-xs text-[var(--text-secondary)] uppercase tracking-wider truncate">
               {provider.provider}
             </p>
           </div>
         </div>
         <div className="flex gap-2">
           <button
-            onClick={fetchStatus}
+            onClick={handleFetch}
             disabled={loading}
-            className="p-2 rounded-lg hover:bg-[var(--bg-overlay)] 
+            className="p-2 rounded-lg hover:bg-[var(--bg-overlay)]
                        text-[var(--text-secondary)] hover:text-[var(--color-primary)]
                        transition-colors"
             title="刷新"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
-          <button
-            onClick={() => onEdit(provider)}
-            className="p-2 rounded-lg hover:bg-[var(--bg-overlay)] 
-                       text-[var(--text-secondary)] hover:text-[var(--color-primary)]
-                       transition-colors"
-            title="编辑"
-          >
-            <Settings className="w-4 h-4" />
-          </button>
+          {onDelete && (
+            <button
+              onClick={handleDelete}
+              className="p-2 rounded-lg hover:bg-[var(--bg-overlay)]
+                         text-[var(--text-secondary)] hover:text-[var(--color-danger)]
+                         transition-colors"
+              title={t('provider.delete')}
+              aria-label={t('provider.delete')}
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -166,56 +191,62 @@ export function ProviderCard({ provider, onEdit }: Props) {
       {isCodingPlan ? (
         <div className="space-y-3 mb-3">
           {hasQuota5h && (
-            <QuotaRow 
-              label="⏱ 5小时额度" 
+            <QuotaRow
+              label={t('provider.quotaLabel5h')}
               remaining={status?.quota_5h_remaining}
               total={status?.quota_5h_total}
               used={status?.quota_5h_used}
+              remainingPercent={status?.quota_5h_remaining_percent}
+              resetAt={status?.quota_5h_reset_at}
             />
           )}
           {hasQuotaWeek && (
-            <QuotaRow 
-              label="📅 周额度" 
+            <QuotaRow
+              label={t('provider.quotaLabelWeek')}
               remaining={status?.quota_week_remaining}
               total={status?.quota_week_total}
               used={status?.quota_week_used}
+              remainingPercent={status?.quota_week_remaining_percent}
+              resetAt={status?.quota_week_reset_at}
             />
           )}
           {hasQuotaMonth && (
-            <QuotaRow 
-              label="📆 月额度" 
+            <QuotaRow
+              label={t('provider.quotaLabelMonth')}
               remaining={status?.quota_month_remaining}
               total={status?.quota_month_total}
               used={status?.quota_month_used}
+              remainingPercent={null}
+              resetAt={status?.quota_month_reset_at}
             />
           )}
           {!hasQuota5h && !hasQuotaWeek && !hasQuotaMonth && (
             <div className="text-center py-4 text-sm text-[var(--text-muted)]">
-              等待额度数据返回...
+              {t('provider.quotaWaiting')}
             </div>
           )}
         </div>
       ) : (
         /* 通用余额展示 */
         <div className="mb-4">
-          <div className="flex items-baseline justify-between mb-2">
-            <span className="text-sm text-[var(--text-secondary)]">{t('provider.balance')}</span>
-            <span className="text-2xl font-bold text-[var(--color-primary)] 
-                            drop-shadow-[var(--glow-primary)]">
+          <div className="flex items-baseline justify-between mb-2 gap-2">
+            <span className="text-sm text-[var(--text-secondary)] whitespace-nowrap">{t('provider.balance')}</span>
+            <span className="text-lg sm:text-xl font-bold text-[var(--color-primary)]
+                            drop-shadow-[var(--glow-primary)] truncate min-w-0">
               {status?.balance !== null && status?.balance !== undefined
-                ? `$${status.balance.toFixed(2)}`
+                ? `${getCurrencySymbol(status.currency, provider.provider)}${status.balance.toFixed(2)}`
                 : '--'}
             </span>
           </div>
 
           <div className="relative h-2 bg-[var(--bg-secondary)] rounded-full overflow-hidden">
             <div
-              className="absolute inset-y-0 left-0 bg-gradient-to-r 
+              className="absolute inset-y-0 left-0 bg-gradient-to-r
                          from-[var(--color-primary)] to-[var(--color-secondary)]
                          rounded-full transition-all duration-500"
               style={{ width: `${Math.min(usagePercent, 100)}%` }}
             >
-              <div className="absolute inset-0 bg-white/20 animate-pulse" />
+              {/* 余额条内部的 animate-pulse 移除 — 移动端持续动画拖累主线程合成 */}
             </div>
           </div>
         </div>
@@ -231,10 +262,10 @@ export function ProviderCard({ provider, onEdit }: Props) {
         </div>
         <div className="bg-[var(--bg-secondary)]/50 rounded-lg p-2">
           <div className="text-xs text-[var(--text-muted)]">
-            {isCodingPlan ? '总剩余' : t('provider.requestsToday')}
+            {isCodingPlan ? t('provider.quotaTotalRemaining') : t('provider.requestsToday')}
           </div>
           <div className="text-sm font-semibold text-[var(--text-primary)]">
-            {isCodingPlan 
+            {isCodingPlan
               ? Math.floor((status?.quota_5h_remaining || 0) + (status?.quota_week_remaining || 0))
               : (status?.requests_today ?? '--')}
           </div>
@@ -251,3 +282,12 @@ export function ProviderCard({ provider, onEdit }: Props) {
     </div>
   );
 }
+
+// 用 React.memo + 自定义比较：只要 provider 引用不变就不重渲染。
+// 关键：onDelete 必须稳定（见 App.tsx 改成 useCallback），否则 memo 形同虚设。
+export const ProviderCard = memo(
+  ProviderCardImpl,
+  (prev, next) =>
+    prev.provider === next.provider &&
+    prev.onDelete === next.onDelete,
+);

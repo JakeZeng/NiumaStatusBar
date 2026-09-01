@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import type { ProviderConfig } from '../api';
+import { ModalBackdrop } from './ModalBackdrop';
 
 const PROVIDER_PRESETS = [
   {
@@ -22,7 +23,7 @@ const PROVIDER_PRESETS = [
     type: 'deepseek',
     name: 'DeepSeek',
     baseUrl: 'https://api.deepseek.com',
-    endpoint: '/v1/user/usage',
+    endpoint: '/v1/user/balance',
     method: 'GET',
   },
   {
@@ -62,7 +63,7 @@ interface Props {
   onSave: (provider: ProviderConfig) => void;
 }
 
-export function ConfigModal({ isOpen, provider, onClose, onSave }: Props) {
+export const ConfigModal = memo(function ConfigModal({ isOpen, provider, onClose, onSave }: Props) {
   const { t } = useTranslation();
   const [form, setForm] = useState<Partial<ProviderConfig>>({});
 
@@ -96,7 +97,7 @@ export function ConfigModal({ isOpen, provider, onClose, onSave }: Props) {
           'x-ark-customer': 'monitor-usage',
         };
         // 默认模型；用户可在下方"Model"输入框修改
-        newForm.queryParams = { model: 'doubao-seed-code-1-0-260215' };
+        newForm.queryParams = { model: 'ark-code-latest' };
       } else {
         newForm.queryHeaders = { 'Content-Type': 'application/json' };
         newForm.queryParams = {};
@@ -137,11 +138,11 @@ export function ConfigModal({ isOpen, provider, onClose, onSave }: Props) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <ModalBackdrop level="base">
       <div className="bg-[var(--bg-card)] rounded-xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto
                       border border-[var(--border-color)] shadow-[var(--shadow-card)]">
         <div className="flex items-center justify-between p-4 border-b border-[var(--border-color)]">
-          <h2 className="text-lg font-semibold text-[var(--text-primary)]">
+          <h2 className="text-base sm:text-lg font-semibold text-[var(--text-primary)] truncate pr-2">
             {provider ? t('provider.edit') : t('provider.add')}
           </h2>
           <button onClick={onClose} className="p-1 hover:bg-[var(--bg-overlay)] rounded">
@@ -152,18 +153,18 @@ export function ConfigModal({ isOpen, provider, onClose, onSave }: Props) {
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
           <div>
             <label className="block text-sm font-medium mb-2 text-[var(--text-secondary)]">{t('provider.presets')}</label>
-            <div className="flex gap-2">
-              {PROVIDER_PRESETS.map(preset => (
-                <button type="button" key={preset.type}
-                  onClick={() => applyPreset(preset)}
-                  className="px-3 py-1.5 text-sm bg-[var(--bg-secondary)] rounded-lg 
-                           hover:bg-[var(--bg-overlay)] transition-colors
-                           text-[var(--text-primary)]">
-                  {preset.name}
-                </button>
-              ))}
+              <div className="flex gap-2 flex-wrap">
+                {PROVIDER_PRESETS.map(preset => (
+                  <button type="button" key={preset.type}
+                    onClick={() => applyPreset(preset)}
+                    className="px-3 py-1.5 text-sm bg-[var(--bg-secondary)] rounded-lg
+                             hover:bg-[var(--bg-overlay)] transition-colors
+                             text-[var(--text-primary)] whitespace-nowrap truncate max-w-full">
+                    {preset.name}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
 
           <div>
             <label className="block text-sm font-medium mb-1 text-[var(--text-secondary)]">{t('provider.name')}</label>
@@ -182,35 +183,35 @@ export function ConfigModal({ isOpen, provider, onClose, onSave }: Props) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium mb-1 text-[var(--text-secondary)]">{t('provider.baseUrl')}</label>
-              <input type="text" value={form.baseUrl || ''} onChange={e => setForm(f => ({ ...f, baseUrl: e.target.value }))}
-                className="w-full px-3 py-2 rounded-lg border border-[var(--border-color)] 
-                         bg-[var(--bg-secondary)] text-[var(--text-primary)]" />
+                <input type="text" value={form.baseUrl || ''} onChange={e => setForm(f => ({ ...f, baseUrl: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg border border-[var(--border-color)] 
+                           bg-[var(--bg-secondary)] text-[var(--text-primary)]" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1 text-[var(--text-secondary)]">{t('provider.queryEndpoint')}</label>
+                <input type="text" value={form.queryEndpoint || ''} onChange={e => setForm(f => ({ ...f, queryEndpoint: e.target.value }))}
+                  className="w-full px-3 py-2 rounded-lg border border-[var(--border-color)] 
+                           bg-[var(--bg-secondary)] text-[var(--text-primary)]" />
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium mb-1 text-[var(--text-secondary)]">{t('provider.queryEndpoint')}</label>
-              <input type="text" value={form.queryEndpoint || ''} onChange={e => setForm(f => ({ ...f, queryEndpoint: e.target.value }))}
-                className="w-full px-3 py-2 rounded-lg border border-[var(--border-color)] 
-                         bg-[var(--bg-secondary)] text-[var(--text-primary)]" />
-            </div>
-          </div>
 
           <div>
             <label className="block text-sm font-medium mb-1 text-[var(--text-secondary)]">{t('provider.method')}</label>
-            <select value={form.queryMethod || 'GET'} onChange={e => setForm(f => ({ ...f, queryMethod: e.target.value as 'GET' | 'POST' }))}
-              className="w-full px-3 py-2 rounded-lg border border-[var(--border-color)] 
-                       bg-[var(--bg-secondary)] text-[var(--text-primary)]">
-              <option value="GET">GET</option>
-              <option value="POST">POST</option>
-            </select>
-          </div>
+              <select value={form.queryMethod || 'GET'} onChange={e => setForm(f => ({ ...f, queryMethod: e.target.value as 'GET' | 'POST' }))}
+                className="w-full px-3 py-2 rounded-lg border border-[var(--border-color)]
+                         bg-[var(--bg-secondary)] text-[var(--text-primary)] text-sm">
+                <option value="GET">GET</option>
+                <option value="POST">POST</option>
+              </select>
+            </div>
 
-          {/* 火山方舟：可手动调整 model */}
+          {/* 火山方舟：新增或编辑时均可手动调整 model */}
           {isArkProvider && (
             <div>
               <label className="block text-sm font-medium mb-1 text-[var(--text-secondary)]">
                 Model
                 <span className="ml-2 text-xs text-[var(--text-muted)]">
-                  留空使用默认 doubao-seed-code-1-0-260215
+                  留空使用默认 ark-code-latest
                 </span>
               </label>
               <input
@@ -220,7 +221,7 @@ export function ConfigModal({ isOpen, provider, onClose, onSave }: Props) {
                   ...f,
                   queryParams: { ...(f.queryParams || {}), model: e.target.value }
                 }))}
-                placeholder="doubao-seed-code-1-0-260215"
+                placeholder="ark-code-latest"
                 className="w-full px-3 py-2 rounded-lg border border-[var(--border-color)] 
                          bg-[var(--bg-secondary)] text-[var(--text-primary)]
                          placeholder:text-[var(--text-muted)]"
@@ -249,6 +250,6 @@ export function ConfigModal({ isOpen, provider, onClose, onSave }: Props) {
           </div>
         </form>
       </div>
-    </div>
+    </ModalBackdrop>
   );
-}
+});

@@ -233,6 +233,48 @@ jobs:
           cd ..
           pnpm tauri android init --ci
 
+      - name: Apply 1x2 widget patches
+        run: |
+          set -e
+          # tauri android init --ci 已经 rm -rf gen/android/ 并重生成脚手架，
+          # 默认会带 v0.1.36 的 3 receiver (Small/Medium/Large) + RemoteViewsService。
+          # v0.1.37 起只发布 1x2 一个 widget，cp -r widget-patches/* 覆盖默认
+          # 生成的内容，再用 sed 收尾 AndroidManifest。
+          cp -r src-tauri/widget-patches/. src-tauri/gen/android/
+          MANIFEST=src-tauri/gen/android/app/src/main/AndroidManifest.xml
+          # 删除 3 个旧 receiver 节点（小/中/大）
+          python3 - <<'PY'
+          import re, pathlib
+          p = pathlib.Path('src-tauri/gen/android/app/src/main/AndroidManifest.xml')
+          text = p.read_text()
+          # 删 3 个 widget receiver 块：匹配 <receiver ...>...</receiver>，name 以 .widget.UsageWidgetProviderSmall/Medium/Large 开头
+          text = re.sub(
+              r'\s*<receiver\s+android:name="\.widget\.UsageWidgetProvider(Small|Medium|Large)"[^>]*>.*?</receiver>',
+              '\n',
+              text,
+              flags=re.DOTALL,
+          )
+          # 删 RemoteViewsService 节点
+          text = re.sub(
+              r'\s*<!--\s*RemoteViewsService.*?</service>',
+              '',
+              text,
+              flags=re.DOTALL,
+          )
+          text = re.sub(
+              r'\s*<service\s+android:name="\.widget\.UsageRemoteViewsService"[^>]*>.*?</service>',
+              '',
+              text,
+              flags=re.DOTALL,
+          )
+          # 把旧 receiver 引用的 strings 改回 _one
+          text = re.sub(r'@string/widget_label_(small|medium|large)', '@string/widget_label_one', text)
+          text = re.sub(r'@string/widget_desc_(small|medium|large)', '@string/widget_desc_one', text)
+          p.write_text(text)
+          print("manifest patched: removed 3 receivers + service, normalized string refs")
+          PY
+          cat "$MANIFEST"
+
       - name: Disable app-module BuildConfig generation
         run: |
           # tauri-cli 2.11's `tauri android init --ci` regenerates
@@ -309,7 +351,7 @@ jobs:
 
           # Add `signingConfig = ...` line in the `release` buildType.
           if ! grep -q 'signingConfig = signingConfigs.getByName("release")' "$GRADLE_FILE"; then
-            sed -i 's/^            isMinifyEnabled = true$/            isMinifyEnabled = true\n            signingConfig = signingConfigs.getByName("release")/' "$GRADLE_FILE"
+            sed -i 's/^            isMinifyEnabled = true$/            isMinifyEnabled = false\n            signingConfig = signingConfigs.getByName("release")/' "$GRADLE_FILE"
           fi
 
           echo "--- app/build.gradle.kts (buildFeatures + signing blocks) ---"
@@ -382,6 +424,22 @@ jobs:
               # class closing brace (`^}$` at 0 indent).
               sed -i 's|^}$|  @Keep\n  override var id: Int = 0\n}|' "$MAIN_ACTIVITY"
             fi
+            # 4. Drop tauri-cli 2.11's default `setLayerType(SOFTWARE, ...)`
+            #    in onWebViewCreate. Software rendering forces the entire
+            #    WebView (HTML/CSS/JS) to run on the CPU: every animation,
+            #    transform, box-shadow, backdrop-filter lands in the main
+            #    thread's paint path, and taps are queued behind the
+            #    compositor. It was originally added to work around a
+            #    MuMu emulator GPU compatibility bug ("tile memory limits
+            #    exceeded" -> white screen). Real Android devices (which is
+            #    our only supported target as of v0.1.35) have a working
+            #    GPU; we want hardware acceleration by default. Android
+            #    automatically falls back to software rendering on devices
+            #    that lack a usable GPU, so we don't need to opt out here.
+            if grep -q 'setLayerType(View.LAYER_TYPE_SOFTWARE' "$MAIN_ACTIVITY"; then
+              sed -i '/webView\.setLayerType(View\.LAYER_TYPE_SOFTWARE, null)/d' "$MAIN_ACTIVITY"
+              echo "Removed tauri-cli default setLayerType(LAYER_TYPE_SOFTWARE) in $MAIN_ACTIVITY"
+            fi
             echo "--- MainActivity.kt (after WRY getId() override) ---"
             cat "$MAIN_ACTIVITY"
           fi
@@ -394,9 +452,73 @@ jobs:
           # tauri-android is a Gradle subproject generated on first cargo build
           # (WRY build.rs writes the Kotlin source via WRY_ANDROID_KOTLIN_FILES_OUT_DIR).
           # tauri-cli 2.11.x doesn't create these wiring files in --ci mode, so we do.
-          cat > "$ROOT/tauri.settings.gradle" <<'EOF'
+          #
+          # IMPORTANT: `tauri android init --ci` does NOT generate
+          # `tauri.settings.gradle` in tauri-cli 2.11.x (only the non-ci
+          # variant does, and even then we'd need to rewrite :tauri-android's
+          # projectDir). We have to write the file from scratch, and it MUST
+          # include all three subprojects:
+          #   - :tauri-android              -> our scaffolded .tauri/tauri-api/
+          #   - :tauri-plugin-shell         -> cargo registry path
+          #   - :tauri-plugin-notification  -> cargo registry path
+          # If we drop the two plugins, Gradle never compiles
+          # :tauri-plugin-shell/android, the resulting APK has no
+          # app/tauri/shell/ShellPlugin.class in its dex, and WRY 0.55.1's
+          # WryActivity.getAppClass("shell") throws ClassNotFoundException
+          # at launch -> Rust panic -> app crashes (root cause of
+          # v0.1.27/v0.1.28 release flash-back on Xiaomi). The plugin
+          # Android dirs come from `cargo metadata` because the
+          # cargo-registry path varies per runner / OS / Rust version and
+          # MUST NOT be hard-coded.
+
+          # 1. Write a tiny Python helper that reads cargo metadata JSON on
+          # stdin and emits `NAME=path` lines on stdout for the two plugins.
+          # Keeping it as a standalone file (not an inline -c string) avoids
+          # YAML literal-block indentation pitfalls and shell-quoting pain.
+          cat > /tmp/get_plugin_dirs.py <<'PYEOF'
+          import json, sys
+          d = json.load(sys.stdin)
+          plugins = ("tauri-plugin-shell", "tauri-plugin-notification")
+          out = {p["name"]: p["manifest_path"].rsplit("/", 1)[0] + "/android"
+                 for p in d.get("packages", [])
+                 if p["name"] in plugins}
+          missing = [n for n in plugins if n not in out]
+          if missing:
+              print("FATAL: cargo metadata did not report: " + ",".join(missing), file=sys.stderr)
+              sys.exit(1)
+          for name, d in out.items():
+              print(name.upper().replace("-", "_") + "_DIR=" + d)
+          PYEOF
+
+          # 2. Run it, capture the NAME=path lines, eval into the shell.
+          cd src-tauri
+          PLUGIN_DIRS=$(cargo metadata --format-version=1 | python3 /tmp/get_plugin_dirs.py)
+          eval "$PLUGIN_DIRS"
+          cd ..
+          if [ -z "${TAURI_PLUGIN_SHELL_DIR:-}" ] || [ -z "${TAURI_PLUGIN_NOTIFICATION_DIR:-}" ]; then
+            echo "FATAL: cargo metadata did not yield plugin paths"
+            echo "PLUGIN_DIRS output was:"
+            echo "$PLUGIN_DIRS"
+            exit 1
+          fi
+
+          # 3. Validate the dirs exist + have build.gradle.kts.
+          for d in "$TAURI_PLUGIN_SHELL_DIR" "$TAURI_PLUGIN_NOTIFICATION_DIR"; do
+            if [ ! -d "$d" ]; then echo "FATAL: $d does not exist"; exit 1; fi
+            if [ ! -f "$d/build.gradle.kts" ]; then echo "FATAL: $d/build.gradle.kts missing"; exit 1; fi
+          done
+
+          # 4. Write tauri.settings.gradle. Unquoted heredoc (`<<EOF`, not
+          # `<<'EOF'`) so $NOTIF_DIR / $SHELL_DIR expand, but escape
+          # $rootDir as \$rootDir so the Groovy DSL preserves it (it's a
+          # Gradle-injected project layout variable, NOT a shell var).
+          cat > "$ROOT/tauri.settings.gradle" <<EOF
           include(":tauri-android")
-          project(":tauri-android").projectDir = file("$rootDir/.tauri/tauri-api")
+          include(":tauri-plugin-notification")
+          include(":tauri-plugin-shell")
+          project(":tauri-android").projectDir = file("\$rootDir/.tauri/tauri-api")
+          project(":tauri-plugin-notification").projectDir = file("$TAURI_PLUGIN_NOTIFICATION_DIR")
+          project(":tauri-plugin-shell").projectDir = file("$TAURI_PLUGIN_SHELL_DIR")
           EOF
 
           # NOTE: app/build.gradle.kts has `apply(from = "tauri.build.gradle.kts")`,
@@ -404,17 +526,24 @@ jobs:
           # directory (app/), so the file MUST live at $ROOT/app/, not $ROOT/.
           # ALSO: the apply is OUTSIDE the `dependencies { }` block in app/build.gradle.kts
           # (line 91 vs the block closing on line 89), so this file is compiled as
-          # a standalone script — `implementation` (which lives on the
+          # a standalone script -- `implementation` (which lives on the
           # DependencyHandler receiver) is unresolved at script-compile time.
           # The fix is the same as what tauri-build's `generate_gradle_files`
           # does (see crates/tauri-build/src/mobile.rs in the tauri repo):
           # bring `implementation` into scope as a top-level val by
           # delegating to the `configurations` container, then use it inside
           # `dependencies { }` as if it were a method.
+          #
+          # The implementation list must include ALL three subprojects that
+          # tauri.settings.gradle references -- see the long comment block
+          # above for why. Dropping :tauri-plugin-shell from here breaks the
+          # APK the same way dropping it from tauri.settings.gradle does.
           cat > "$ROOT/app/tauri.build.gradle.kts" <<'EOF'
           val implementation by configurations
           dependencies {
               implementation(project(":tauri-android"))
+              implementation(project(":tauri-plugin-shell"))
+              implementation(project(":tauri-plugin-notification"))
           }
           EOF
 
@@ -821,6 +950,55 @@ jobs:
           echo "--- patched BuildTask.kt (first 20 lines) ---"
           head -20 "$BUILDTASK"
 
+      - name: Restore home-screen widget (AppWidget) sources after init
+        run: |
+          set -e
+          ROOT=src-tauri/gen/android
+          # v0.1.37 起 1x2 home-screen widget 源已搬到 src-tauri/widget-patches/，
+          # 在更早的 'Apply 1x2 widget patches' 步骤里 cp -r 已经覆盖了 gen/android/。
+          # 这里需要恢复：
+          #   1) MainActivity.kt（仍在 gen/android/，含 widget click-through）
+          #   2) StatusWidget 用的 widget_status.xml / widget_loading.xml /
+          #      widget_quota_item.xml / ic_widget_notify.xml + Kotlin 源
+          #      (StatusWidgetProvider / StatusWidgetService) — v0.1.37 没搬这些，
+          #      因为它们不在 widget-patches/ 范围内。
+          # 若不恢复 StatusWidget 用的资源，gradle 编译会报 Unresolved reference
+          # (R.layout.widget_status 等) 导致 Build APK 失败。
+
+          # MainActivity.kt carries the widget click-through intent handling.
+          # Restore our version, then RE-APPLY the WRY 0.55.1 `@Keep override
+          # var id` injection (the earlier MainActivity sed step ran against
+          # the init-generated template, which this checkout just replaced).
+          MAIN_ACTIVITY="$ROOT/app/src/main/java/com/aimonitor/app/MainActivity.kt"
+          git checkout HEAD -- "$MAIN_ACTIVITY"
+          if ! grep -q '^  override var id: Int = 0$' "$MAIN_ACTIVITY"; then
+            if ! grep -q 'import androidx.annotation.Keep' "$MAIN_ACTIVITY"; then
+              sed -i 's|^import android.os.Bundle$|&\nimport androidx.annotation.Keep|' "$MAIN_ACTIVITY"
+            fi
+            sed -i 's|^}$|  @Keep\n  override var id: Int = 0\n}|' "$MAIN_ACTIVITY"
+          fi
+
+          # Restore StatusWidget 服务端 Kotlin 源 + 布局 + drawable + proguard。
+          # 这些 v0.1.18 已 commit 入仓，但 init --ci 会清空 gen/android/。
+          # v0.1.37 的 widget-patches/ 只覆盖 1x2 widget；StatusWidget 路径
+          # 仍需从 git 恢复，否则 R 类的 widget_status / ic_widget_notify
+          # 找不到、gradle 编译报 Unresolved reference。
+          git checkout HEAD -- \
+            "$ROOT/app/src/main/java/com/aimonitor/app/StatusWidgetProvider.kt" \
+            "$ROOT/app/src/main/java/com/aimonitor/app/StatusWidgetService.kt" \
+            "$ROOT/app/src/main/java/com/aimonitor/app/widget/UsageSnapshot.kt" \
+            "$ROOT/app/src/main/java/com/aimonitor/app/widget/WidgetDataReader.kt" \
+            "$ROOT/app/src/main/res/layout/widget_status.xml" \
+            "$ROOT/app/src/main/res/layout/widget_loading.xml" \
+            "$ROOT/app/src/main/res/layout/widget_quota_item.xml" \
+            "$ROOT/app/src/main/res/drawable/ic_widget_notify.xml" \
+            "$ROOT/app/proguard-rules.pro"
+
+          echo "--- widget sources (1x2 from widget-patches/, StatusWidget from git) ---"
+          find "$ROOT/app/src/main/java/com/aimonitor/app" -type f | sort
+          echo "manifest receiver count: $(grep -c 'UsageWidgetProvider' "$ROOT/app/src/main/AndroidManifest.xml")"
+          echo "(should be 1 — only UsageWidgetProvider after v0.1.37)"
+
       - name: Make gradlew executable
         run: |
           chmod +x src-tauri/gen/android/gradlew || true
@@ -880,6 +1058,18 @@ jobs:
 
           cd src-tauri
 
+          # 同步前端构建产物到安卓 assets。
+          # CI 绕过 `tauri android build` 直接用 `gradlew assembleRelease`，
+          # 而 tauri-cli 把 frontendDist 拷贝进 app/src/main/assets/ 的步骤
+          # 被跳过了，导致 APK 没有 index.html —— WebView 加载失败、
+          # 打开即闪退 (v0.1.26 实测 assets 仅含 tauri.conf.json + dexopt)。
+          # 手动把仓库根的 dist/ 同步进 assets（保留 init 生成的 tauri.conf.json）。
+          echo "Syncing frontend dist -> android assets"
+          find gen/android/app/src/main/assets -mindepth 1 ! -name 'tauri.conf.json' -delete 2>/dev/null || true
+          cp -r ../dist/. gen/android/app/src/main/assets/
+          echo "--- assets after sync ---"
+          ls -la gen/android/app/src/main/assets/ | head
+
           echo "Starting Android APK build..."
           # Use `assembleRelease` (not per-flavor task like `assembleArm64Release`).
           # Tauri's RustPlugin hardcodes 4 arch productFlavors (arm64/arm/x86/x86_64)
@@ -898,6 +1088,35 @@ jobs:
 
           exit $GRADLE_EXIT
 
+      - name: Verify home-screen widget receivers are in the APK
+        if: success()
+        run: |
+          set -e
+          APK=$(ls src-tauri/gen/android/app/build/outputs/apk/arm64/release/*.apk | head -1)
+          echo "Checking $APK for AppWidget receivers..."
+          # The compiled AndroidManifest inside the APK is binary AXML — byte
+          # grepping is unreliable (string pool encoding varies across aapt2
+          # versions), so parse it properly with aapt2 dump xmltree. If the
+          # widget restore step ever drifts from the committed file list, the
+          # APK silently ships without widgets; fail loudly here instead.
+          AAPT=$(ls "$ANDROID_SDK_ROOT"/build-tools/*/aapt2 | sort -V | tail -1)
+          echo "Using $AAPT"
+          "$AAPT" dump xmltree --file AndroidManifest.xml "$APK" > /tmp/apk-manifest.txt
+          echo "--- <receiver> entries in merged APK manifest ---"
+          grep -i "receiver" /tmp/apk-manifest.txt || true
+          echo "--- widget Kotlin classes packaged in APK ---"
+          unzip -l "$APK" | grep -i "widget" || true
+          echo "-----------------------------------------------"
+          for cls in UsageWidgetProvider; do
+            if grep -Fq "$cls" /tmp/apk-manifest.txt; then
+              echo "OK: $cls present"
+            else
+              echo "FATAL: $cls missing from APK manifest — widget restore step is incomplete" >&2
+              echo "(check the 'Restore home-screen widget' step log above for 'manifest receiver count:' — should be 1 after v0.1.37)" >&2
+              exit 1
+            fi
+          done
+
       - name: Upload APK as workflow artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -914,6 +1133,37 @@ jobs:
           name: android-build-log
           path: src-tauri/build.log
           retention-days: 7
+
+      # Always emit build log into the run's step summary, so the
+      # failure (or success) tail is readable directly on the GitHub
+      # Actions run page without downloading any artifact. This is
+      # what `web_fetch /runs/{id}` returns in the `summary` field
+      # and what an LLM agent reads to debug a failed build.
+      - name: Surface build log in step summary
+        if: always()
+        run: |
+          if [ -s src-tauri/build.log ]; then
+            {
+              # Top: extract the most informative error lines so the
+              # summary stays scannable when the full log is huge.
+              echo "### Android APK build — diagnostic excerpt"
+              echo ""
+              echo '```'
+              grep -nE '^(FAILURE:|e: |error: |\\* What went wrong:|\\* Where:|\\* Try:|Caused by:|Execution failed for task|Compilation error:|Unresolved reference:|> Could not|> Task :[a-zA-Z0-9:_-]+ FAILED)' src-tauri/build.log \
+                | head -n 80 || true
+              echo '```'
+              echo ""
+              echo "<details><summary>show last 400 lines of full log</summary>"
+              echo ""
+              echo '```'
+              tail -n 400 src-tauri/build.log
+              echo '```'
+              echo ""
+              echo "</details>"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "build.log not found or empty" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Append APK to GitHub release
         if: startsWith(github.ref, 'refs/tags/') && success()

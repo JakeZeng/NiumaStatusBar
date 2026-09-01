@@ -1,3 +1,5 @@
+import { api } from '../api';
+
 export type ThemeId = 'cyberpunk' | 'wuxia' | 'guoman';
 
 export interface ThemeConfig {
@@ -39,12 +41,23 @@ export class ThemeManager {
   constructor() {
     this.load();
     this.apply(this.current);
+    this.syncToBackend(this.current);
   }
 
   setTheme(themeId: ThemeId): void {
     this.current = themeId;
     this.apply(themeId);
     this.save();
+    this.syncToBackend(themeId);
+  }
+
+  /**
+   * 把主题 id 持久化到 Rust settings 表——Android 桌面组件进程不加载
+   * WebView，读不到 localStorage，只能从 SQLite 拿主题给卡片配色。
+   * 纯浏览器 dev 模式（无 Tauri IPC）下 invoke 会 reject，静默忽略。
+   */
+  private syncToBackend(themeId: ThemeId): void {
+    api.setAppTheme(themeId).catch(() => {});
   }
 
   getCurrent(): ThemeId {

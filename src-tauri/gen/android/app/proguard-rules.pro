@@ -93,3 +93,28 @@
 -keep class com.aimonitor.app.MainActivity { *; }
 -keep class com.aimonitor.app.WryActivity { *; }
 # Remove this block once we move off tauri 2.11.3 (which pins wry 0.55.1).
+
+# --- 桌面组件 (AppWidget) ---
+# Manifest 通过 ".widget.UsageWidgetProvider*" 等字符串引用 widget 类。
+# R8 默认会尝试重命名/剥离；如果不显式 keep，widget 在 release 包里
+# 会 ClassNotFoundException，桌面长按时找不到入口。
+# 同时 RemoteViewsFactory、RemoteViewsService 也要 keep。
+-keep class com.aimonitor.app.widget.** { *; }
+
+# --- Tauri plugin classes (NiumaStatusBar fix, v0.1.28+ regression) ---
+# WRY 0.55.1's WryActivity.getAppClass(name) resolves plugin classes by
+# string at runtime via Class.forName("app.tauri.shell.ShellPlugin")
+# etc. R8 tree-shake can't see those string references, so if the :app
+# module's R8 pass is enabled and the only path to a plugin class is via
+# WRY's JNI lookup, R8 may strip the plugin classes from the dex. That
+# was the root cause of the v0.1.27/v0.1.28 release-package flash-back
+# on Xiaomi: tauri-plugin-shell/android was never included as a Gradle
+# subproject, so its app/tauri/shell/ShellPlugin.class was never shipped,
+# Class.forName threw CNF, Rust panicked, app crashed at launch.
+# Belt-and-braces: keep EVERYTHING under app.tauri.** so all tauri-* /
+# tauri-plugin-* classes survive R8 even if :app isMinifyEnabled somehow
+# flips back to true (sed bug in CI, manual init, etc). Safe to keep
+# permanently — these libraries ship only with Tauri and don't pull in
+# any user-named symbols.
+-keep class app.tauri.** { *; }
+-keep interface app.tauri.** { *; }
