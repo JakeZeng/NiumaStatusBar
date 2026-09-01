@@ -282,55 +282,56 @@ impl AppLogger {
 ///
 /// 仅在 `Bearer` 后面紧跟 `[A-Za-z0-9._-]+` token 时才 redact；
 /// 其它情况（如已经是 `Bearer ****` 的占位）保持原文不变。
+///
+/// **实现说明**：早期版本按字节扫描（`&s[i..i+6]`），在多字节 UTF-8 字符（中文/日文/emoji）
+/// 附近会触发 `byte index is not a char boundary` panic，App 进程在 release profile
+/// 下 `panic = "abort"` 直接挂掉，导致 Rust poller 停止、widget 永远拿不到数据。
+/// 现改为 char 级别迭代，彻底规避 UTF-8 边界问题。
 fn mask_bearer_token(s: &str) -> String {
-    let bytes = s.as_bytes();
+    let chars: Vec<char> = s.chars().collect();
+    let n = chars.len();
     let mut out = String::with_capacity(s.len());
     let mut i = 0;
-    while i < bytes.len() {
-        if i + 6 <= bytes.len() {
-            let candidate = &s[i..i + 6];
-            if candidate.eq_ignore_ascii_case("bearer") {
-                let prev_ok = i == 0 || !is_word_byte(bytes[i - 1]);
-                if prev_ok {
-                    // 探测 Bearer 后面是否紧跟有效 token
-                    let mut j = i + 6;
-                    while j < bytes.len() && bytes[j].is_ascii_whitespace() {
-                        j += 1;
-                    }
-                    let token_start = j;
-                    if j < bytes.len()
-                        && (bytes[j].is_ascii_alphanumeric()
-                            || bytes[j] == b'.'
-                            || bytes[j] == b'_'
-                            || bytes[j] == b'-')
-                    {
-                        while j < bytes.len()
-                            && (bytes[j].is_ascii_alphanumeric()
-                                || bytes[j] == b'.'
-                                || bytes[j] == b'_'
-                                || bytes[j] == b'-')
-                        {
-                            j += 1;
-                        }
-                        if j > token_start {
-                            // 确实有 token，整段替换
-                            out.push_str("Bearer ****");
-                            i = j;
-                            continue;
-                        }
-                    }
-                    // 没有有效 token（如已是 "Bearer ****" 的占位），走普通字符流
+    while i < n {
+        // 大小写不敏感地匹配 6 字符 "bearer"
+        if i + 6 <= n
+            && chars[i..i + 6]
+                .iter()
+                .zip("bearer".chars())
+                .all(|(a, b)| a.eq_ignore_ascii_case(&b))
+        {
+            let prev_ok = i == 0 || !is_word_char(chars[i - 1]);
+            if prev_ok {
+                // 探测 Bearer 后面是否紧跟有效 token（先跳空白）
+                let mut j = i + 6;
+                while j < n && chars[j].is_whitespace() {
+                    j += 1;
                 }
+                let token_start = j;
+                while j < n && is_token_char(chars[j]) {
+                    j += 1;
+                }
+                if j > token_start {
+                    // 确实有 token，整段替换
+                    out.push_str("Bearer ****");
+                    i = j;
+                    continue;
+                }
+                // 没有有效 token（如已是 "Bearer ****" 的占位），走普通字符流
             }
         }
-        out.push(bytes[i] as char);
+        out.push(chars[i]);
         i += 1;
     }
     out
 }
 
-fn is_word_byte(b: u8) -> bool {
-    b.is_ascii_alphanumeric() || b == b'_' || b == b'-'
+fn is_word_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '_' || c == '-'
+}
+
+fn is_token_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-'
 }
 
 /// 递归替换 JSON Object 中白名单 key 的 String 值为 `"***"`
@@ -412,6 +413,34 @@ mod tests {
         let output = mask_bearer_token(input);
         // 已经是 **** 不应二次处理
         assert_eq!(output, input);
+    }
+
+    #[test]
+    fn mask_bearer_token_chinese_prefix() {
+        // UTF-8 多字节字符前缀不能导致 panic（早期 byte-slice 实现的 bug）
+        let input = "中文日志：Bearer abc.def-ghi";
+        let output = mask_bearer_token(input);
+        assert!(output.contains("Bearer ****"));
+        assert!(!output.contains("abc.def-ghi"));
+        assert!(output.contains("中文日志"));
+    }
+
+    #[test]
+    fn mask_bearer_token_chinese_suffix() {
+        let input = "Bearer abc.def-ghi 中文";
+        let output = mask_bearer_token(input);
+        assert!(output.contains("Bearer ****"));
+        assert!(!output.contains("abc.def-ghi"));
+        assert!(output.contains("中文"));
+    }
+
+    #[test]
+    fn mask_bearer_token_emoji_middle() {
+        // emoji 是 4 字节 UTF-8 序列，夹在 Bearer 之前
+        let input = "🎉 Bearer sk-abc_123.def 中文";
+        let output = mask_bearer_token(input);
+        assert!(output.contains("Bearer ****"));
+        assert!(!output.contains("sk-abc_123.def"));
     }
 
     #[test]
