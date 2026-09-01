@@ -60,6 +60,9 @@ jobs:
         # 从 GITHUB_REF_NAME 拿 tag（形如 v0.1.44），剥掉 v 前缀后写入
         # package.json / tauri.conf.json 的 version 字段。tag push 之外
         # 的触发（workflow_dispatch、PR）跳过，避免误改。
+        # 注意：sed 命令必须写在同一行 — macOS 自带 BSD sed 不支持 \
+        # 行延续，会把第二行的文件名当成 sed 的额外命令并报
+        # "extra characters at the end of p command"。
         run: |
           set -e
           if [ "$GITHUB_REF_TYPE" != "tag" ]; then
@@ -71,8 +74,8 @@ jobs:
             echo "VERSION is empty after stripping 'v' prefix, skipping"
             exit 0
           fi
-          sed -i "s|\"version\": \"[0-9.]*\"|\"version\": \"$VERSION\"|" \
-            package.json src-tauri/tauri.conf.json
+          sed -i.bak "s|\"version\": \"[0-9.]*\"|\"version\": \"$VERSION\"|" package.json && rm -f package.json.bak
+          sed -i.bak "s|\"version\": \"[0-9.]*\"|\"version\": \"$VERSION\"|" src-tauri/tauri.conf.json && rm -f src-tauri/tauri.conf.json.bak
           echo "--- synced to $VERSION ---"
           grep '"version"' package.json src-tauri/tauri.conf.json
 
@@ -180,6 +183,9 @@ jobs:
       - name: Sync version from git tag
         # 与 publish job 同样的逻辑：从 tag 名（v0.1.44）剥前缀后写入
         # package.json / tauri.conf.json。tag push 之外的触发跳过。
+        # 注意：sed 命令必须写在同一行 — macOS 自带 BSD sed 不支持 \
+        # 行延续，会把第二行的文件名当成 sed 的额外命令并报
+        # "extra characters at the end of p command"。
         run: |
           set -e
           if [ "$GITHUB_REF_TYPE" != "tag" ]; then
@@ -191,8 +197,8 @@ jobs:
             echo "VERSION is empty after stripping 'v' prefix, skipping"
             exit 0
           fi
-          sed -i "s|\"version\": \"[0-9.]*\"|\"version\": \"$VERSION\"|" \
-            package.json src-tauri/tauri.conf.json
+          sed -i.bak "s|\"version\": \"[0-9.]*\"|\"version\": \"$VERSION\"|" package.json && rm -f package.json.bak
+          sed -i.bak "s|\"version\": \"[0-9.]*\"|\"version\": \"$VERSION\"|" src-tauri/tauri.conf.json && rm -f src-tauri/tauri.conf.json.bak
           echo "--- synced to $VERSION ---"
           grep '"version"' package.json src-tauri/tauri.conf.json
 
