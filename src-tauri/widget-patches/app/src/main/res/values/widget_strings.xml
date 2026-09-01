@@ -31,4 +31,10 @@
 
     <!-- 时间显示 -->
     <string name="widget_updated_at">Updated %1$s</string>
+
+    <!-- 1x2 轮播前台服务（v0.1.39+） -->
+    <string name="widget_carousel_channel_name">Widget refresh</string>
+    <string name="widget_carousel_channel_desc">Keeps the 1x2 widget rotating through providers</string>
+    <string name="widget_carousel_notif_title">AI Monitor</string>
+    <string name="widget_carousel_notif_text">Widget is rotating providers every 5 s</string>
 </resources>
