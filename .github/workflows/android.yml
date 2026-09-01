@@ -872,9 +872,14 @@ jobs:
           fi
 
           # Restore StatusWidget 服务端 Kotlin 源 + 布局 + drawable + proguard。
+          # widget-patches 里的 UsageWidgetProvider / WidgetLayoutBuilder 还依赖
+          # 同目录的 UsageSnapshot.kt / WidgetDataReader.kt（git tracked），
+          # init --ci 删掉后 Kotlin 编译会报 Unresolved reference。
           git checkout HEAD -- \
             "$ROOT/app/src/main/java/com/aimonitor/app/StatusWidgetProvider.kt" \
             "$ROOT/app/src/main/java/com/aimonitor/app/StatusWidgetService.kt" \
+            "$ROOT/app/src/main/java/com/aimonitor/app/widget/UsageSnapshot.kt" \
+            "$ROOT/app/src/main/java/com/aimonitor/app/widget/WidgetDataReader.kt" \
             "$ROOT/app/src/main/res/layout/widget_status.xml" \
             "$ROOT/app/src/main/res/layout/widget_loading.xml" \
             "$ROOT/app/src/main/res/layout/widget_quota_item.xml" \
@@ -1020,6 +1025,35 @@ jobs:
           name: android-build-log
           path: src-tauri/build.log
           retention-days: 7
+
+      # Always emit build log into the run's step summary, so the
+      # failure (or success) tail is readable directly on the GitHub
+      # Actions run page without downloading any artifact. This is
+      # what `web_fetch /runs/{id}` returns in the `summary` field
+      # and what an LLM agent reads to debug a failed build.
+      - name: Surface build log in step summary
+        if: always()
+        run: |
+          if [ -s src-tauri/build.log ]; then
+            {
+              echo "### Android APK build — diagnostic excerpt"
+              echo ""
+              echo '```'
+              grep -nE '^(FAILURE:|e: |error: |\\* What went wrong:|\\* Where:|\\* Try:|Caused by:|Execution failed for task|Compilation error:|Unresolved reference:|> Could not|> Task :[a-zA-Z0-9:_-]+ FAILED)' src-tauri/build.log \
+                | head -n 80 || true
+              echo '```'
+              echo ""
+              echo "<details><summary>show last 400 lines of full log</summary>"
+              echo ""
+              echo '```'
+              tail -n 400 src-tauri/build.log
+              echo '```'
+              echo ""
+              echo "</details>"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "build.log not found or empty" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Append APK to GitHub release
         if: startsWith(github.ref, 'refs/tags/') && success()
