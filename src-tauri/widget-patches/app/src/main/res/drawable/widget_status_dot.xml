@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  状态点（绿/红/灰）由 RemoteViews.setInt(...) 在运行时根据 last_error
+  决定选用哪个 R.id。可复用同色 fill 的不同 dot drawable。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <solid android:color="@color/widget_status_ok" />
+    <size android:width="8dp" android:height="8dp" />
+</shape>

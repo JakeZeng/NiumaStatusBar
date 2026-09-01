@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Dark mode overrides：系统切到夜间模式时切换到深色卡片 -->
+<resources>
+    <color name="widget_bg">#E6111111</color>           <!-- dark: 半透明黑 -->
+    <color name="widget_divider">#1FFFFFFF</color>
+    <color name="widget_text_primary">#FFEFEFEF</color>
+    <color name="widget_text_secondary">#FFB0B0B0</color>
+    <color name="widget_text_muted">#FF808080</color>
+    <color name="widget_progress_track">#33FFFFFF</color>
+    <color name="widget_progress_fill">#FF4FC3F7</color>
+    <color name="widget_progress_warn">#FFFFB74D</color>
+    <color name="widget_status_ok">#FF66BB6A</color>
+    <color name="widget_status_error">#FFEF5350</color>
+    <color name="widget_status_disabled">#FF757575</color>
+</resources>
