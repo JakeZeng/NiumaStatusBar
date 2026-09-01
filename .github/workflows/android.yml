@@ -851,12 +851,10 @@ jobs:
           ROOT=src-tauri/gen/android
           # v0.1.37 起 1x2 home-screen widget 源已搬到 src-tauri/widget-patches/，
           # 在更早的 'Apply 1x2 widget patches' 步骤里 cp -r 已经覆盖了 gen/android/。
-          # 这里需要恢复：
+          # 这里只需要恢复 init --ci 仍未覆盖的两块：
           #   1) MainActivity.kt（仍在 gen/android/，含 widget click-through）
-          #   2) StatusWidget 用的 widget_status.xml / widget_loading.xml /
-          #      widget_quota_item.xml / ic_widget_notify.xml + Kotlin 源
-          #      (StatusWidgetProvider / StatusWidgetService) — v0.1.37 没搬这些。
-          # 若不恢复，gradle 编译会报 Unresolved reference 导致 Build APK 失败。
+          #   2) UsageSnapshot.kt / WidgetDataReader.kt（widget-patches/ 目前没
+          #      收这两个 v0.1.37 之前的旧文件，init --ci 会清空，需要从 git 取回）
 
           # MainActivity.kt carries the widget click-through intent handling.
           # Restore our version, then RE-APPLY the WRY 0.55.1 `@Keep override
@@ -871,25 +869,18 @@ jobs:
             sed -i 's|^}$|  @Keep\n  override var id: Int = 0\n}|' "$MAIN_ACTIVITY"
           fi
 
-          # Restore StatusWidget 服务端 Kotlin 源 + 布局 + drawable + proguard。
-          # widget-patches 里的 UsageWidgetProvider / WidgetLayoutBuilder 还依赖
-          # 同目录的 UsageSnapshot.kt / WidgetDataReader.kt（git tracked），
-          # init --ci 删掉后 Kotlin 编译会报 Unresolved reference。
+          # Restore UsageSnapshot / WidgetDataReader (被 UsageWidgetProvider /
+          # WidgetLayoutBuilder / UsageWidgetCarouselService 引用)。这两个文件
+          # v0.1.37 后没被搬到 widget-patches/，所以 init --ci 清空后只能从
+          # git 取回。v0.1.39 起 StatusWidget 相关死代码已删除，无需再恢复。
           git checkout HEAD -- \
-            "$ROOT/app/src/main/java/com/aimonitor/app/StatusWidgetProvider.kt" \
-            "$ROOT/app/src/main/java/com/aimonitor/app/StatusWidgetService.kt" \
             "$ROOT/app/src/main/java/com/aimonitor/app/widget/UsageSnapshot.kt" \
-            "$ROOT/app/src/main/java/com/aimonitor/app/widget/WidgetDataReader.kt" \
-            "$ROOT/app/src/main/res/layout/widget_status.xml" \
-            "$ROOT/app/src/main/res/layout/widget_loading.xml" \
-            "$ROOT/app/src/main/res/layout/widget_quota_item.xml" \
-            "$ROOT/app/src/main/res/drawable/ic_widget_notify.xml" \
-            "$ROOT/app/proguard-rules.pro"
+            "$ROOT/app/src/main/java/com/aimonitor/app/widget/WidgetDataReader.kt"
 
-          echo "--- widget sources (1x2 from widget-patches/, StatusWidget from git) ---"
+          echo "--- widget sources (all from widget-patches/ + init + git restore) ---"
           find "$ROOT/app/src/main/java/com/aimonitor/app" -type f | sort
           echo "manifest receiver count: $(grep -c 'UsageWidgetProvider' "$ROOT/app/src/main/AndroidManifest.xml")"
-          echo "(should be 1 — only UsageWidgetProvider after v0.1.37)"
+          echo "(should be 1 — only UsageWidgetProvider since v0.1.37)"
 
       - name: Make gradlew executable
         run: |
