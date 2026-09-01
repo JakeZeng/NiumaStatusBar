@@ -63,6 +63,7 @@ jobs:
         # 注意：sed 命令必须写在同一行 — macOS 自带 BSD sed 不支持 \
         # 行延续，会把第二行的文件名当成 sed 的额外命令并报
         # "extra characters at the end of p command"。
+        shell: bash
         run: |
           set -e
           if [ "$GITHUB_REF_TYPE" != "tag" ]; then
@@ -186,6 +187,7 @@ jobs:
         # 注意：sed 命令必须写在同一行 — macOS 自带 BSD sed 不支持 \
         # 行延续，会把第二行的文件名当成 sed 的额外命令并报
         # "extra characters at the end of p command"。
+        shell: bash
         run: |
           set -e
           if [ "$GITHUB_REF_TYPE" != "tag" ]; then
