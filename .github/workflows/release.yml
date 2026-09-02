@@ -95,11 +95,11 @@ jobs:
             跨平台 AI 模型使用状态监控工具
 
             ## 修复
-            - **Android 桌面组件尺寸修正**：之前部分 launcher 把 widget 显示为 1×3，现已修正为 1×2（`minWidth 180dp → 160dp`）。**已添加 widget 的用户请长按移除后重新添加**。
+            - **Android 桌面组件回退问题**：v0.1.45 release 时意外回退了 v0.1.44 的两套 widget 修复（minWidth 140dp + 5 秒轮播），导致 widget 在 80dp/格 launcher（MIUI 等）上重新变成 3×1（应为 2×1），且不再 5 秒自动刷新、只显示单个 provider。v0.1.46 把 v0.1.44 的 carousel 整套重新落回，并叠加 v0.1.45 的 `mask_bearer_token` UTF-8 边界 panic 修复（fix widget 白屏）。
+            - 清理孤儿代码：`StatusWidgetProvider` / `StatusWidgetService` / `widget_status.xml` / `widget_loading.xml` / `widget_quota_item.xml` / `widget_bg.xml` / `widget_progress_*.xml` / `widget_refresh_button.xml` / `src-tauri/src/widget_snapshot.rs` 等无引用文件已删除。
 
-            ## 新增
-            - 1x2 横条 widget 每 5 秒自动轮播所有 enabled provider
-            - 多 provider 时横条末尾显示 `1/3` 页码
+            ## 升级注意
+            v0.1.45 → v0.1.46 升级后已添加的 widget 会按 140dp 重新布局，部分 launcher 需要**长按移除后重新添加**才能正确显示 2×1。
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
