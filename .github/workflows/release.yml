@@ -95,11 +95,15 @@ jobs:
             跨平台 AI 模型使用状态监控工具
 
             ## 修复
-            - **Android 桌面组件回退问题**：v0.1.45 release 时意外回退了 v0.1.44 的两套 widget 修复（minWidth 140dp + 5 秒轮播），导致 widget 在 80dp/格 launcher（MIUI 等）上重新变成 3×1（应为 2×1），且不再 5 秒自动刷新、只显示单个 provider。v0.1.46 把 v0.1.44 的 carousel 整套重新落回，并叠加 v0.1.45 的 `mask_bearer_token` UTF-8 边界 panic 修复（fix widget 白屏）。
-            - 清理孤儿代码：`StatusWidgetProvider` / `StatusWidgetService` / `widget_status.xml` / `widget_loading.xml` / `widget_quota_item.xml` / `widget_bg.xml` / `widget_progress_*.xml` / `widget_refresh_button.xml` / `src-tauri/src/widget_snapshot.rs` 等无引用文件已删除。
+            - **Android 桌面组件"绿点 + 全空"症状**：v0.1.46 widget 添加到桌面后，onUpdate coroutine 还没跑完时显示的 initialLayout 完全没有兜底文字（只有默认绿点），让用户误以为 widget 在工作。v0.1.47 把 layout 兜底补齐：状态点默认改成浅灰（pending），TextView 加 `android:text` 默认值（"加载中…" / "等待首次刷新"），保证 widget 添加后立刻能看出"在等首屏"而不是"啥都没有"。
+
+            ## 新增
+            - **桌面组件自检通道**（v0.1.47+）：widget 进程在关键节点（onUpdate / service start / 每 5s tick / 渲染异常）写一份 `widget_status.json` 到 app data 目录，主进程通过新加的 `get_widget_status` Tauri command 读出来，app 设置页"桌面组件自检"卡片实时展示：最后 tick 距今多少秒、Service 启动次数、最后错误等。**国产 ROM 后台冻结 carousel 时**（v0.1.44 release note 提过），可以一眼看出 `lastTickAt` > 30s、`serviceStartCount=0`，直接定位根因，不用再让用户去 adb 抓 logcat。
 
             ## 升级注意
-            v0.1.45 → v0.1.46 升级后已添加的 widget 会按 140dp 重新布局，部分 launcher 需要**长按移除后重新添加**才能正确显示 2×1。
+            v0.1.46 → v0.1.47 widget 视觉表现有微调：
+            - widget 添加瞬间会先看到**浅灰点 + "加载中…"**，几秒内由 carousel 接管变成正常轮播
+            - v0.1.46 已添加的 widget 升级后会自动跟随新 layout，无需手动重新添加
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
