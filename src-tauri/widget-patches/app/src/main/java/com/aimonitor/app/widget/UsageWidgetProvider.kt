@@ -40,8 +40,6 @@ class UsageWidgetProvider : AppWidgetProvider() {
         appWidgetIds: IntArray,
     ) {
         Log.d(TAG, "onUpdate ids=${appWidgetIds.toList()}")
-        WidgetStatusReporter.report(context, WidgetStatusReporter.Event.ON_UPDATE,
-            widgetCount = appWidgetIds.size)
         // 拉起 carousel service：service 启动后会按 5 秒间隔循环渲染所有 widget
         context.startCarouselService(UsageWidgetCarouselService.ACTION_START)
         // 立即跑一次首屏渲染，避免等 5 秒首屏空白。
@@ -53,11 +51,6 @@ class UsageWidgetProvider : AppWidgetProvider() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 refreshAllBlocking(context, appWidgetManager, appWidgetIds)
-            } catch (e: Exception) {
-                WidgetStatusReporter.report(context,
-                    WidgetStatusReporter.Event.RENDER_ERROR,
-                    errorMessage = e.javaClass.simpleName + ": " + (e.message ?: ""))
-                throw e
             } finally {
                 pendingResult.finish()
             }
@@ -76,11 +69,6 @@ class UsageWidgetProvider : AppWidgetProvider() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 refreshAllBlocking(context, appWidgetManager, intArrayOf(appWidgetId))
-            } catch (e: Exception) {
-                WidgetStatusReporter.report(context,
-                    WidgetStatusReporter.Event.RENDER_ERROR,
-                    errorMessage = e.javaClass.simpleName + ": " + (e.message ?: ""))
-                throw e
             } finally {
                 pendingResult.finish()
             }
@@ -91,7 +79,6 @@ class UsageWidgetProvider : AppWidgetProvider() {
         super.onEnabled(context)
         // 第一个小组件被添加到桌面：确保 service 在运行
         Log.d(TAG, "onEnabled: starting carousel service")
-        WidgetStatusReporter.report(context, WidgetStatusReporter.Event.SERVICE_START)
         context.startCarouselService(UsageWidgetCarouselService.ACTION_START)
     }
 
