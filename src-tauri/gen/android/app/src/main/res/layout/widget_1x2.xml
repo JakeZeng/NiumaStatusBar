@@ -38,8 +38,8 @@
             android:id="@+id/widget_status_dot"
             android:layout_width="8dp"
             android:layout_height="8dp"
-            android:src="@drawable/widget_status_dot"
-            android:contentDescription="@string/widget_status_ok" />
+            android:src="@drawable/widget_status_dot_pending"
+            android:contentDescription="@string/widget_status_pending" />
 
         <TextView
             android:id="@+id/widget_provider_name"
@@ -52,6 +52,7 @@
             android:textStyle="bold"
             android:singleLine="true"
             android:ellipsize="end"
+            android:text="@string/widget_loading"
             tools:text="Provider" />
 
         <TextView
@@ -63,6 +64,7 @@
             android:textSize="14sp"
             android:textStyle="bold"
             android:singleLine="true"
+            android:text="—"
             tools:text="¥128.50" />
 
         <!-- 轮播页码：多 provider 时显示 (1/3)，单 provider 时隐藏，省空间 -->
@@ -88,6 +90,7 @@
         android:textSize="10sp"
         android:singleLine="true"
         android:ellipsize="end"
+        android:text="@string/widget_sub_loading"
         tools:text="5H 78%  │  周 12.5" />
 
     <!-- 隐藏字段（保留以复用 setTextViewText 调用） -->

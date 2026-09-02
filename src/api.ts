@@ -166,4 +166,21 @@ export const api = {
   // 应用日志
   queryLogs: (q: LogQuery) => invoke<LogEntry[]>('query_logs', { q }),
   clearLogs: () => invoke<void>('clear_logs'),
+
+  // v0.1.47+: 桌面小组件自检状态
+  // null 表示 widget 进程还没写过状态（widget 还没添加 / carousel 还没启动）
+  getWidgetStatus: () => invoke<WidgetStatus | null>('get_widget_status'),
 };
+
+export interface WidgetStatus {
+  lastEventAt: number;
+  lastEventTag: string;
+  lastWidgetCount?: number;
+  lastSnapshotCount?: number;
+  lastError?: string;
+  lastOnUpdateAt?: number;
+  lastServiceStartAt?: number;
+  serviceStartCount?: number;
+  lastTickAt?: number;
+  lastErrorAt?: number;
+}

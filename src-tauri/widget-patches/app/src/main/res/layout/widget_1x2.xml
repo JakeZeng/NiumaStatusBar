@@ -38,8 +38,8 @@
             android:id="@+id/widget_status_dot"
             android:layout_width="8dp"
             android:layout_height="8dp"
-            android:src="@drawable/widget_status_dot"
-            android:contentDescription="@string/widget_status_ok" />
+            android:src="@drawable/widget_status_dot_pending"
+            android:contentDescription="@string/widget_status_pending" />
 
         <TextView
             android:id="@+id/widget_provider_name"
@@ -47,6 +47,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:layout_marginStart="6dp"
+            android:text="@string/widget_loading"
             android:textColor="@color/widget_text_primary"
             android:textSize="12sp"
             android:textStyle="bold"
@@ -59,6 +60,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="6dp"
+            android:text="—"
             android:textColor="@color/widget_text_primary"
             android:textSize="14sp"
             android:textStyle="bold"
@@ -84,6 +86,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="1dp"
+        android:text="@string/widget_sub_loading"
         android:textColor="@color/widget_text_secondary"
         android:textSize="10sp"
         android:singleLine="true"

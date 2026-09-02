@@ -22,9 +22,14 @@
     <string name="widget_offline">Offline · showing last snapshot</string>
     <string name="widget_error">Polling failed</string>
 
+    <!-- v0.1.47+: 兜底 layout 默认文案，避免 "绿点 + 全空" 误导用户以为 widget 在工作 -->
+    <string name="widget_loading">Loading…</string>
+    <string name="widget_sub_loading">waiting for first refresh</string>
+
     <!-- 状态点提示（accessibility） -->
     <string name="widget_status_ok">Healthy</string>
     <string name="widget_status_error">Error</string>
+    <string name="widget_status_pending">Starting up</string>
 
     <!-- 小卡片副标签 -->
     <string name="widget_balance">Balance</string>

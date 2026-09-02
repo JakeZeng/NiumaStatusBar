@@ -623,6 +623,43 @@ pub async fn set_app_theme(
     Ok(())
 }
 
+// ============ Widget 自检状态（v0.1.47+）============
+
+/// 读取 widget 进程写的 widget_status.json。
+///
+/// v0.1.47 起，AppWidgetProvider / UsageWidgetCarouselService 在关键事件
+/// (onUpdate / service start / 每 5s tick / 渲染错误) 都会写一份
+/// `{app_data_dir}/ai-model-monitor/widget_status.json`。
+///
+/// 前端在 settings 诊断页调用这个 command，能直接告诉用户：
+///   - 通知栏没看到「Widget is rotating」通知时，service 到底有没有被 service_start
+///   - lastTickAt 距今多久（>30s 说明被系统/ROM 冻结了）
+///   - render_error / service_error 的最后异常类型
+///
+/// 不返回错误：文件不存在或解析失败时返回 `Ok(None)`，前端展示 "无数据"。
+#[tauri::command]
+pub async fn get_widget_status(
+    app: AppHandle,
+    logger: State<'_, Arc<AppLogger>>,
+) -> Result<Option<serde_json::Value>, String> {
+    log_command_entry(&logger, "get_widget_status", None);
+    let data_dir = match app.path().app_data_dir() {
+        Ok(d) => d,
+        Err(e) => return Err(format!("app_data_dir unavailable: {e}")),
+    };
+    let path = data_dir.join("ai-model-monitor").join("widget_status.json");
+    if !path.exists() {
+        return Ok(None);
+    }
+    match std::fs::read_to_string(&path) {
+        Ok(text) => match serde_json::from_str::<serde_json::Value>(&text) {
+            Ok(v) => Ok(Some(v)),
+            Err(e) => Err(format!("parse widget_status.json failed: {e}")),
+        },
+        Err(e) => Err(format!("read {} failed: {e}", path.display())),
+    }
+}
+
 // ============ 日志查询 / 清空 ============
 
 #[tauri::command]

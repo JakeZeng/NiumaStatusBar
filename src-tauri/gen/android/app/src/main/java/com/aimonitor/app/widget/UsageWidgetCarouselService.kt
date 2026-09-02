@@ -74,6 +74,7 @@ class UsageWidgetCarouselService : Service() {
         super.onCreate()
         ensureChannel()
         startForegroundCompat()
+        WidgetStatusReporter.report(this, WidgetStatusReporter.Event.SERVICE_START)
         // 首次延迟一个 INTERVAL 再开始，让 onUpdate 先把 index 校准为 0
         handler.postDelayed(tickRunnable, INTERVAL_MS)
         Log.d(TAG, "onCreate, first tick in ${INTERVAL_MS}ms")
@@ -87,6 +88,7 @@ class UsageWidgetCarouselService : Service() {
         }
         // 重启场景：系统可能已把我们 kill 后再次拉起，需要重新走前台通知
         startForegroundCompat()
+        WidgetStatusReporter.report(this, WidgetStatusReporter.Event.SERVICE_START)
         // 重新调度（避免 onCreate 之后 handler 已被 post 的 runnable 在某些重启路径上 lost）
         handler.removeCallbacks(tickRunnable)
         handler.postDelayed(tickRunnable, INTERVAL_MS)
@@ -121,9 +123,18 @@ class UsageWidgetCarouselService : Service() {
                 WidgetDataReader.latestForEnabledProviders(this@UsageWidgetCarouselService)
             } catch (t: Throwable) {
                 Log.e(TAG, "refreshTick read DB failed", t)
+                WidgetStatusReporter.report(this@UsageWidgetCarouselService,
+                    WidgetStatusReporter.Event.SERVICE_ERROR,
+                    widgetCount = ids.size,
+                    errorMessage = "read DB failed: " + (t.message ?: t.javaClass.simpleName))
                 emptyList()
             }
             val themeId = WidgetDataReader.appTheme(this@UsageWidgetCarouselService)
+            // 状态上报：每 5s 一次，主进程 app 启动时能直接读
+            WidgetStatusReporter.report(this@UsageWidgetCarouselService,
+                WidgetStatusReporter.Event.TICK,
+                widgetCount = ids.size,
+                snapshotCount = snapshots.size)
             val total = snapshots.size
             val (currentIdx, nextIdx) = if (total == 0) {
                 // 没数据：index 保持 0，每 tick 都渲染空态。避免在轮播时无意义递增。

@@ -13,8 +13,13 @@
     <string name="widget_offline">离线 · 显示最近一次快照</string>
     <string name="widget_error">轮询失败</string>
 
+    <!-- v0.1.47+: 兜底 layout 默认文案 -->
+    <string name="widget_loading">加载中…</string>
+    <string name="widget_sub_loading">等待首次刷新</string>
+
     <string name="widget_status_ok">正常</string>
     <string name="widget_status_error">异常</string>
+    <string name="widget_status_pending">启动中</string>
 
     <string name="widget_balance">余额</string>
 
