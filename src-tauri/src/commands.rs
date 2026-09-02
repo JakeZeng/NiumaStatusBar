@@ -4,7 +4,7 @@ use crate::poller::Poller;
 use crate::providers::{ProviderConfig, ProviderManager, UsageStatus};
 use crate::storage::Database;
 use std::sync::Arc;
-use tauri::{AppHandle, State, WebviewWindow};
+use tauri::{AppHandle, Manager, State, WebviewWindow};
 use uuid::Uuid;
 
 pub const CLOSE_ACTION_KEY: &str = "close_action";
