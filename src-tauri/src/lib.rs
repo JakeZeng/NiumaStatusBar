@@ -184,6 +184,7 @@ pub fn run() {
             commands::update_provider,
             commands::delete_provider,
             commands::fetch_provider_status,
+            commands::widget_refresh_all,
             commands::get_provider_status,
             commands::get_usage_history,
             commands::export_config,

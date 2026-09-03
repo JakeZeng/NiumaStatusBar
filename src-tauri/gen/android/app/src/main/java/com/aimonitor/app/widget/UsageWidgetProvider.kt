@@ -40,16 +40,22 @@ class UsageWidgetProvider : AppWidgetProvider() {
         appWidgetIds: IntArray,
     ) {
         Log.d(TAG, "onUpdate ids=${appWidgetIds.toList()}")
-        // 拉起 carousel service：service 启动后会按 5 秒间隔循环渲染所有 widget
-        context.startCarouselService(UsageWidgetCarouselService.ACTION_START)
-        // 立即跑一次首屏渲染，避免等 5 秒首屏空白。
-        // 必须用 goAsync() 持有 broadcast receiver lock —— AppWidgetProvider
-        // 是 broadcast，进程在 onUpdate 返回后会被系统立即 kill。
-        // 没 goAsync() 时 launch 出去的 coroutine 还没读完 SQLite 就被
-        // SIGKILL 一起杀掉，widget 永远停在初始空状态。
+        // 必须先 goAsync() 拿到 receiver lock，再去做任何可能抛异常的事。
+        //
+        // v0.1.51 修复：原先 startCarouselService() 排在 goAsync() 之前。
+        // Android 12+（API 31，本项目 targetSdk=36）禁止后台启动前台服务，
+        // App 不在前台时这行抛 ForegroundServiceStartNotAllowedException，
+        // 异常从 BroadcastReceiver.onReceive 冒泡直接搞崩进程，goAsync()
+        // 那行根本执行不到 —— 首屏渲染一次都没发生，widget 就永远停在
+        // initialLayout 的默认文案 widget_loading / widget_sub_loading。
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
+                // 拉起 carousel service：service 启动后按 5 秒间隔循环渲染所有 widget。
+                // 启动失败（后台 FGS 限制 / 特殊 ROM）不能影响本次首屏渲染，
+                // 退化到 manifest 的 updatePeriodMillis=30min 保底刷新。
+                context.tryStartCarouselService(UsageWidgetCarouselService.ACTION_START)
+                // 立即跑一次首屏渲染，避免等 5 秒首屏空白
                 refreshAllBlocking(context, appWidgetManager, appWidgetIds)
             } finally {
                 pendingResult.finish()
@@ -77,16 +83,18 @@ class UsageWidgetProvider : AppWidgetProvider() {
 
     override fun onEnabled(context: Context) {
         super.onEnabled(context)
-        // 第一个小组件被添加到桌面：确保 service 在运行
+        // 第一个小组件被添加到桌面：确保 service 在运行。
+        // 与 onUpdate 同理，startForegroundService 在后台被调用会抛
+        // ForegroundServiceStartNotAllowedException，不能让它冒泡到 onReceive。
         Log.d(TAG, "onEnabled: starting carousel service")
-        context.startCarouselService(UsageWidgetCarouselService.ACTION_START)
+        context.tryStartCarouselService(UsageWidgetCarouselService.ACTION_START)
     }
 
     override fun onDisabled(context: Context) {
         super.onDisabled(context)
         // 最后一个小组件被移除：让 service 退出循环
         Log.d(TAG, "onDisabled: stopping carousel service")
-        context.startCarouselService(UsageWidgetCarouselService.ACTION_STOP)
+        context.tryStartCarouselService(UsageWidgetCarouselService.ACTION_STOP)
     }
 
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
@@ -110,9 +118,14 @@ class UsageWidgetProvider : AppWidgetProvider() {
         try {
             val snapshots = WidgetDataReader.latestForEnabledProviders(context)
             val themeId = WidgetDataReader.appTheme(context)
-            Log.d(TAG, "refreshAll read ${snapshots.size} snapshots, theme=$themeId")
+            // v0.1.51：snapshots 为空时补查 providers 表，让空态能区分
+            // 「用户没添加供应商」和「有供应商但还没拉到数据」。
+            // 有数据时不用查，省一次 SQLite 开关。
+            val hasAnyProvider =
+                if (snapshots.isEmpty()) WidgetDataReader.hasEnabledProviders(context) else true
+            Log.d(TAG, "refreshAll read ${snapshots.size} snapshots, theme=$themeId, hasAnyProvider=$hasAnyProvider")
             appWidgetIds.forEach { id ->
-                val rv = WidgetLayoutBuilder.build(context, snapshots, 0, themeId)
+                val rv = WidgetLayoutBuilder.build(context, snapshots, 0, themeId, hasAnyProvider)
                 appWidgetManager.updateAppWidget(id, rv)
             }
         } catch (e: Exception) {
@@ -126,15 +139,27 @@ class UsageWidgetProvider : AppWidgetProvider() {
         /**
          * 启动 / 停止轮播 service 的便捷封装。
          * API 26+（Oreo）起必须显式 startForegroundService；低版本用 startService 即可。
+         *
+         * 所有失败都在内部吞掉并记日志，绝不外抛：调用方全都是
+         * BroadcastReceiver 回调（onUpdate / onEnabled / onDisabled），
+         * 异常从 onReceive 冒泡会直接搞崩进程。
+         *
+         * 典型失败：Android 12+（API 31）后台启动前台服务抛
+         * ForegroundServiceStartNotAllowedException；Android 8+ 后台
+         * startService 抛 IllegalStateException。
          */
-        private fun Context.startCarouselService(action: String) {
-            val intent = Intent(this, UsageWidgetCarouselService::class.java).apply {
-                this.action = action
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(intent)
-            } else {
-                startService(intent)
+        private fun Context.tryStartCarouselService(action: String) {
+            runCatching {
+                val intent = Intent(this, UsageWidgetCarouselService::class.java).apply {
+                    this.action = action
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(intent)
+                } else {
+                    startService(intent)
+                }
+            }.onFailure { t ->
+                Log.w(TAG, "startCarouselService($action) failed, ignored", t)
             }
         }
     }

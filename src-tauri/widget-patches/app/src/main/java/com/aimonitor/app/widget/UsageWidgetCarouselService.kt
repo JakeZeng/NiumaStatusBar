@@ -57,8 +57,16 @@ class UsageWidgetCarouselService : Service() {
          * DB 最新数据陈旧阈值（秒）。超过这个时间没有新 usage_history 写入，
          * 就认为 poller 没在跑（app 进程被杀 / 没启动 / 网络失败），
          * carousel service 主动 startActivity 唤起 MainActivity 拉一次。
+         *
+         * v0.1.51：5 分钟 → 15 分钟。App 进程活着时 poller 默认 60 秒一轮
+         * （`refresh_interval.max(10)`，见 poller.rs），根本不会触发陈旧；
+         * 真正陈旧只发生在 App 进程已经不在的时候，那时 5 分钟还是 15 分钟
+         * 对「能否唤醒」没有区别，放宽只是省掉 App 正常运行时的无效判定。
+         *
+         * 同时被 [WidgetLayoutBuilder] 用作「第 2 行改显示更新于 N 分钟前」的阈值，
+         * 两处必须是同一个值，所以这里不做 private。
          */
-        private const val STALE_THRESHOLD_SEC = 5 * 60L
+        const val STALE_THRESHOLD_SEC = 15 * 60L
 
         /**
          * 唤起 MainActivity 的最小间隔（毫秒）。避免在 poller 还没跑出第一行
@@ -145,6 +153,11 @@ class UsageWidgetCarouselService : Service() {
             }
             val themeId = WidgetDataReader.appTheme(this@UsageWidgetCarouselService)
             val total = snapshots.size
+            // v0.1.51：snapshots 为空时补查 providers 表，让空态区分
+            // 「没添加供应商」与「有供应商但还没拉到数据」。有数据时不查。
+            val hasAnyProvider =
+                if (total == 0) WidgetDataReader.hasEnabledProviders(this@UsageWidgetCarouselService)
+                else true
             // 检测 DB 是否需要唤醒 App：
             //   - snapshots 为空：DB 完全没数据（app 没启动过 / poller 没跑过）
             //   - latestTimestamp 陈旧：poller 停了（app 进程被杀 / 网络挂）
@@ -156,48 +169,46 @@ class UsageWidgetCarouselService : Service() {
                 null
             }
             maybeWakeApp(snapshots, latestTs)
-            val (currentIdx, nextIdx) = if (total == 0) {
-                // 没数据：index 保持 0，每 tick 都渲染空态。避免在轮播时无意义递增。
-                0 to 0
-            } else {
-                val current = index % total
-                current to (current + 1) % total
-            }
-            val previews = snapshots.map { snap ->
-                WidgetLayoutBuilder.build(
+            if (total == 0) {
+                // 空态 RemoteViews 只跟 hasAnyProvider 有关，提前构造一次复用
+                val empty = WidgetLayoutBuilder.build(
                     this@UsageWidgetCarouselService,
-                    listOf(snap),
+                    emptyList(),
                     0,
                     themeId,
+                    hasAnyProvider,
                 )
+                handler.post {
+                    try {
+                        ids.forEach { id -> mgr.updateAppWidget(id, empty) }
+                    } catch (t: Throwable) {
+                        Log.e(TAG, "updateAppWidget failed", t)
+                    }
+                }
+                return@launch
             }
-            // 切回主线程推送给 AppWidgetManager
+
+            val current = index % total
+            val next = (current + 1) % total
+            // 传整个列表 + current，让 WidgetLayoutBuilder 内部算页码（"2/3"）。
+            // 之前传的是 listOf(snapshots[current]) + index=0，列表长度恒为 1，
+            // 页码分支永远走 GONE —— 多 provider 轮播时看不到自己在看第几个。
+            val currentView = WidgetLayoutBuilder.build(
+                this@UsageWidgetCarouselService,
+                snapshots,
+                current,
+                themeId,
+                hasAnyProvider,
+            )
+            // updateAppWidget 跨 Binder，回主线程调用避免 StrictMode 警告与偶发 ANR
             handler.post {
                 try {
-                    if (total == 0) {
-                        ids.forEach { id ->
-                            mgr.updateAppWidget(
-                                id,
-                                WidgetLayoutBuilder.build(
-                                    this@UsageWidgetCarouselService,
-                                    emptyList(),
-                                    0,
-                                    themeId,
-                                ),
-                            )
-                        }
-                    } else {
-                        ids.forEach { id ->
-                            mgr.updateAppWidget(id, previews[currentIdx])
-                        }
-                    }
+                    ids.forEach { id -> mgr.updateAppWidget(id, currentView) }
                 } catch (t: Throwable) {
                     Log.e(TAG, "updateAppWidget failed", t)
                 }
-            }
-            // 在主线程派发完成后再递增 index，避免读盘慢时主线程用了过期的 current
-            if (total > 0) {
-                index = nextIdx
+                // 在主线程派发完成后再递增 index，避免读盘慢时主线程用了过期的 current
+                index = next
             }
         }
     }
@@ -230,15 +241,20 @@ class UsageWidgetCarouselService : Service() {
         val intent = Intent(this, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             // 标记这次是 widget 唤起的；MainActivity 会通过 WebView 调
-            // window.__NIUMA_WIDGET_WAKE__() 触发前端立即拉一次。
+            // window.__NIUMA_WIDGET_WAKE__() 触发前端 widget_refresh_all。
             putExtra(MainActivity.EXTRA_FROM_WIDGET, true)
         }
-        try {
-            startActivity(intent)
-        } catch (t: Throwable) {
-            // Android 12+ 后台启动 Activity 受限；foreground service 仍允许，但部分
-            // ROM 仍会拒绝。失败就静默，不影响 widget 渲染。
-            Log.w(TAG, "startActivity(MainActivity) failed", t)
+        // v0.1.51：真的发到主线程调。之前注释写了「发到 mainHandler」但实现是
+        // 直接在 ioScope 协程里 startActivity —— 非主线程启动 Activity 在部分
+        // ROM 上行为未定义，且和注释对不上。
+        handler.post {
+            try {
+                startActivity(intent)
+            } catch (t: Throwable) {
+                // Android 10+ 后台启动 Activity 受限；foreground service 不在豁免
+                // 清单里，多数 ROM 会静默拦截。失败只记日志，不影响 widget 渲染。
+                Log.w(TAG, "startActivity(MainActivity) failed", t)
+            }
         }
     }
 

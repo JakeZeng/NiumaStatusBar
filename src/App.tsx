@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { listen } from '@tauri-apps/api/event';
+import { invoke } from '@tauri-apps/api/core';
 import { themeManager, type ThemeId } from './themes/ThemeManager';
 import { ThemeSwitcher } from './components/ThemeSwitcher';
 import { LanguageSwitcher } from './components/LanguageSwitcher';
@@ -74,22 +75,20 @@ export default function App() {
 
   // Android 桌面组件检测到 DB 陈旧/空时会 startActivity 唤起 MainActivity，
   // 唤起时带 EXTRA_FROM_WIDGET=true，MainActivity 通过 WebView 调这个函数。
-  // 立即并行 fetch 所有 enabled provider 一次（绕过 poller 的 interval 节流），
-  // 让 widget 在 5s 内读到新数据。
+  //
+  // v0.1.51：改调后端 widget_refresh_all，而不是前端逐个 fetchProviderStatus。
+  // 原因：widget 是从 usage_history 表读数的，而 fetch_provider_status 不落库
+  // —— 逐个拉完 DB 一行没多，widget 5 秒后的 tick 读到的还是旧值。
+  // widget_refresh_all 在后端顺序 fetch 所有 enabled provider 并写 usage_history，
+  // 等价于「补跑一轮 poller」，这样 widget 才能真正刷新。
   useEffect(() => {
     (window as unknown as {
       __NIUMA_WIDGET_WAKE__?: () => Promise<void>;
     }).__NIUMA_WIDGET_WAKE__ = async () => {
       try {
-        const list = await api.getProviders();
-        const enabled = list.filter(p => p.isEnabled);
-        if (enabled.length === 0) return;
-        // 并行 fetch；单个失败不影响其他
-        await Promise.allSettled(
-          enabled.map(p => api.fetchProviderStatus(p.id))
-        );
+        await invoke<number>('widget_refresh_all');
       } catch (err) {
-        console.error('__NIUMA_WIDGET_WAKE__ failed', err);
+        console.error('widget_refresh_all failed', err);
       }
     };
     return () => {

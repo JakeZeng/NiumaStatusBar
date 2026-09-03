@@ -28,6 +28,11 @@
 
     <string name="widget_balance">余额</string>
 
+    <!-- v0.1.51+: 数据陈旧时第 2 行改显示的文案（阈值 15 分钟） -->
+    <string name="widget_stale_minutes">更新于 %1$d 分钟前</string>
+    <string name="widget_stale_hours">更新于 %1$d 小时前</string>
+    <string name="widget_stale_days">更新于 %1$d 天前</string>
+
     <string name="widget_updated_at">更新于 %1$s</string>
 
     <!-- 1x2 轮播前台服务（v0.1.39+） -->

@@ -4,7 +4,8 @@ use crate::poller::Poller;
 use crate::providers::{ProviderConfig, ProviderManager, UsageStatus};
 use crate::storage::Database;
 use std::sync::Arc;
-use tauri::{AppHandle, Manager, State, WebviewWindow};
+// Emitter：Tauri v2 把 emit() 从 AppHandle 的固有方法挪到了这个 trait 上
+use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 use uuid::Uuid;
 
 pub const CLOSE_ACTION_KEY: &str = "close_action";
@@ -142,6 +143,7 @@ pub async fn delete_provider(
 
 #[tauri::command]
 pub async fn fetch_provider_status(
+    app_handle: AppHandle,
     id: String,
     manager: State<'_, Arc<ProviderManager>>,
     logger: State<'_, Arc<AppLogger>>,
@@ -160,14 +162,88 @@ pub async fn fetch_provider_status(
             );
             "Provider not found".to_string()
         })?;
-    manager.fetch_usage(provider).await.map_err(|e| {
+    let status = manager.fetch_usage(provider).await.map_err(|e| {
         log_command_error(
             &logger,
             "fetch_provider_status",
             e,
             Some(serde_json::json!({ "id": id })),
         )
-    })
+    })?;
+    // v0.1.51：手动刷新也要 emit。之前只有 poller.rs 会推 status-update，
+    // 导致 statusStore.fetchOne() 的 loading spinner 要等下一次 poller tick
+    // （默认 60s）才被清掉，byId 也不会立即反映这次手动拉取的结果。
+    let _ = app_handle.emit("status-update", &status);
+    Ok(status)
+}
+
+/// 供 Android 桌面组件唤起路径专用：拉一次所有 enabled provider 并落库。
+///
+/// 为什么不复用 `fetch_provider_status`：后者同时是前端「手动刷新」按钮的入口
+/// （`src/store/statusStore.ts` 的 fetchOne）。如果在那里加 save_usage_history，
+/// 用户每点一次刷新就往 usage_history 插一行，会污染 HistoryChart 的数据点
+/// 并撑大历史表。这个命令只被 widget 唤起路径（`window.__NIUMA_WIDGET_WAKE__`）
+/// 调用，语义上等价于「补跑一轮 poller」。
+///
+/// 返回成功落库的 provider 数量。
+#[tauri::command]
+pub async fn widget_refresh_all(
+    app_handle: AppHandle,
+    manager: State<'_, Arc<ProviderManager>>,
+    db: State<'_, Arc<Database>>,
+    logger: State<'_, Arc<AppLogger>>,
+) -> Result<usize, String> {
+    log_command_entry(&logger, "widget_refresh_all", None);
+
+    let enabled: Vec<ProviderConfig> = manager
+        .get_providers()
+        .await
+        .into_iter()
+        .filter(|p| p.is_enabled)
+        .collect();
+    if enabled.is_empty() {
+        return Ok(0);
+    }
+
+    // 顺序执行而非并发：db 是单个 SQLite 连接（Mutex<Connection>），并发写
+    // 只会加剧锁竞争；而 widget 唤起本来就是低频路径（throttle 5 分钟）。
+    let mut saved = 0usize;
+    for p in &enabled {
+        match manager.fetch_usage(p).await {
+            Ok(status) => {
+                if let Err(e) = db.save_usage_history(&status) {
+                    logger.log(
+                        LogLevel::Error,
+                        LogCategory::Database,
+                        Some(p.id.clone()),
+                        "widget_refresh_all: save usage history failed",
+                        Some(serde_json::json!({ "error": e.to_string() })),
+                    );
+                } else {
+                    saved += 1;
+                }
+                let _ = app_handle.emit("status-update", &status);
+            }
+            Err(e) => {
+                logger.log(
+                    LogLevel::Warn,
+                    LogCategory::Poller,
+                    Some(p.id.clone()),
+                    "widget_refresh_all: fetch failed",
+                    Some(serde_json::json!({ "error": e })),
+                );
+            }
+        }
+    }
+
+    logger.log(
+        LogLevel::Info,
+        LogCategory::Poller,
+        Some("widget_refresh_all".into()),
+        "widget refresh done",
+        Some(serde_json::json!({ "total": enabled.len(), "saved": saved })),
+    );
+    Ok(saved)
 }
 
 #[tauri::command]

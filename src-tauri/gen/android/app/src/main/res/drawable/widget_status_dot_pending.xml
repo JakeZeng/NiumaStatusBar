@@ -1,10 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   v0.1.47 状态点（"等待首屏渲染"）。
-  比 disabled 更浅的灰，让"还在拉数据"和"被禁用"视觉上能区分。
-  WidgetLayoutBuilder 在第一次 onUpdate 完成 setImageViewResource 之前，
-  layout 默认就会显示这个 drawable；用户能看到"widget 还没跑首屏"，而不是
-  误以为"OK 绿点 = widget 在工作"。
+  见 gen/android 同名文件说明。
 -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="oval">

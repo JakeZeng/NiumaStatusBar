@@ -26,12 +26,23 @@ import com.aimonitor.app.R
  */
 object WidgetLayoutBuilder {
 
+  /**
+   * 数据陈旧阈值（秒）。距快照写入超过这么久，第 2 行就改显示
+   * 「更新于 N 分钟前」而不是 quota 数字，避免把冻结值当成实时值。
+   * 直接复用 [UsageWidgetCarouselService.STALE_THRESHOLD_SEC]，保证
+   * 「判定时机」和「展示阈值」不会各自漂移。
+   */
+  private const val STALE_AFTER_SEC = UsageWidgetCarouselService.STALE_THRESHOLD_SEC
+
   /** 主入口：填充数据并返回 RemoteViews。themeId 见 [WidgetTheme]。
    *
    * @param hasAnyProvider snapshots 为空时，传 providers 表是否有 enabled 记录：
    *   - true：有 provider 但还没拉到数据 → 显示 "正在同步"
    *   - false：用户没添加任何 provider → 显示 "请打开 App 配置"
-   *   - null：未查询（保持 v0.1.47 默认 "等待首次刷新" 兜底文案）
+   *   - null：未查询（兜底，等同 false）
+   *
+   * v0.1.51：两个调用点（[UsageWidgetProvider] 首屏、[UsageWidgetCarouselService]
+   * 轮播 tick）都会在 snapshots 为空时传真实查询结果，null 只是防御性兜底。
    */
   fun build(
     context: Context,
@@ -55,8 +66,13 @@ object WidgetLayoutBuilder {
   /**
    * 1x2 渲染逻辑：
    * - 第 1 行：状态点 + provider 名 + 主数值（balance / Coding Plan 最小周期 %）
-   * - 第 2 行：quota 补充（multi-period summary）
+   * - 第 2 行：quota 补充（multi-period summary），数据陈旧时改显示「更新于 N 分钟前」
    * - 页码：仅当 total > 1 时显示 "(index+1)/total"，单 provider 时隐藏省空间
+   *
+   * v0.1.51 起：数据超过 [STALE_AFTER_SEC] 时，第 2 行不再显示 quota 数字。
+   * 理由：widget 只是 SQLite 的只读渲染器，App 进程不在时数据会冻结；
+   * 此时继续显示 "5H 78%" 会让人误以为是实时值。与其假装实时，
+   * 不如把陈旧显式化（状态点同时降为 pending 灰点）。
    */
   private fun renderOne(
     context: Context,
@@ -65,10 +81,14 @@ object WidgetLayoutBuilder {
     index: Int,
     total: Int,
   ) {
+    val stale = isStale(top)
     rv.setTextViewText(R.id.widget_provider_name, top.providerName)
     rv.setTextViewText(R.id.widget_big_number, formatBigNumber(top))
-    rv.setTextViewText(R.id.widget_sub_label, subLabelFor(context, top))
-    rv.setImageViewResource(R.id.widget_status_dot, statusDotFor(top))
+    rv.setTextViewText(
+      R.id.widget_sub_label,
+      if (stale) staleLabel(context, top) else subLabelFor(context, top),
+    )
+    rv.setImageViewResource(R.id.widget_status_dot, staleDot(top, stale))
     rv.setOnClickPendingIntent(R.id.widget_root, openAppIntent(context, top.providerId))
 
     if (total > 1) {
@@ -76,6 +96,20 @@ object WidgetLayoutBuilder {
       rv.setViewVisibility(R.id.widget_page_index, android.view.View.VISIBLE)
     } else {
       rv.setViewVisibility(R.id.widget_page_index, android.view.View.GONE)
+    }
+  }
+
+  /** 快照是否陈旧（超过 [STALE_AFTER_SEC] 没有新数据写入）。 */
+  private fun isStale(s: UsageSnapshot): Boolean =
+    (System.currentTimeMillis() / 1000 - s.timestamp) > STALE_AFTER_SEC
+
+  /** 陈旧时的第 2 行文案：「更新于 N 分钟 / 小时 / 天前」。 */
+  private fun staleLabel(context: Context, s: UsageSnapshot): String {
+    val minutes = ((System.currentTimeMillis() / 1000 - s.timestamp) / 60).coerceAtLeast(0L)
+    return when {
+      minutes < 60 -> context.getString(R.string.widget_stale_minutes, minutes)
+      minutes < 60 * 24 -> context.getString(R.string.widget_stale_hours, minutes / 60)
+      else -> context.getString(R.string.widget_stale_days, minutes / (60 * 24))
     }
   }
 
@@ -163,6 +197,13 @@ object WidgetLayoutBuilder {
     s.lastError != null -> R.drawable.widget_status_dot_error
     !s.isEnabled -> R.drawable.widget_status_dot_disabled
     else -> R.drawable.widget_status_dot
+  }
+
+  /** 陈旧时降为 pending 灰点；轮询失败（lastError）优先保持红点。 */
+  private fun staleDot(s: UsageSnapshot, stale: Boolean): Int = when {
+    s.lastError != null -> R.drawable.widget_status_dot_error
+    stale -> R.drawable.widget_status_dot_pending
+    else -> statusDotFor(s)
   }
 
   private fun formatBalance(v: Double): String =
