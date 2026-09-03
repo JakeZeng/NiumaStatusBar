@@ -26,16 +26,23 @@ import com.aimonitor.app.R
  */
 object WidgetLayoutBuilder {
 
-  /** 主入口：填充数据并返回 RemoteViews。themeId 见 [WidgetTheme]。 */
+  /** 主入口：填充数据并返回 RemoteViews。themeId 见 [WidgetTheme]。
+   *
+   * @param hasAnyProvider snapshots 为空时，传 providers 表是否有 enabled 记录：
+   *   - true：有 provider 但还没拉到数据 → 显示 "正在同步"
+   *   - false：用户没添加任何 provider → 显示 "请打开 App 配置"
+   *   - null：未查询（保持 v0.1.47 默认 "等待首次刷新" 兜底文案）
+   */
   fun build(
     context: Context,
     snapshots: List<UsageSnapshot>,
     index: Int = 0,
     themeId: String? = null,
+    hasAnyProvider: Boolean? = null,
   ): RemoteViews {
     val rv = RemoteViews(context.packageName, R.layout.widget_1x2)
     if (snapshots.isEmpty()) {
-      renderEmpty(context, rv)
+      renderEmpty(context, rv, hasAnyProvider)
     } else {
       val safeIndex = index.mod(snapshots.size.coerceAtLeast(1))
       val top = snapshots[safeIndex]
@@ -126,11 +133,30 @@ object WidgetLayoutBuilder {
     return parts.joinToString("  │  ")
   }
 
-  private fun renderEmpty(context: Context, rv: RemoteViews) {
-    rv.setTextViewText(R.id.widget_provider_name, context.getString(R.string.widget_no_provider))
+  private fun renderEmpty(
+    context: Context,
+    rv: RemoteViews,
+    hasAnyProvider: Boolean? = null,
+  ) {
+    // 三种空态文案：
+    //   - hasAnyProvider == false：用户没添加任何 provider → 提示配置
+    //   - hasAnyProvider == true：有 provider 但 DB 暂无 history → 提示等待同步
+    //     （poller 没跑 / 第一次拉取中）
+    //   - null：未查过 providers 表（调用方没传），回退到 v0.1.47 默认文案
+    val nameRes = when (hasAnyProvider) {
+      false -> R.string.widget_no_provider
+      true -> R.string.widget_syncing
+      null -> R.string.widget_no_provider
+    }
+    val subRes = when (hasAnyProvider) {
+      false -> R.string.widget_no_provider_hint
+      true -> R.string.widget_sub_loading
+      null -> R.string.widget_sub_loading
+    }
+    rv.setTextViewText(R.id.widget_provider_name, context.getString(nameRes))
     rv.setTextViewText(R.id.widget_big_number, "—")
-    rv.setTextViewText(R.id.widget_sub_label, "")
-    rv.setImageViewResource(R.id.widget_status_dot, R.drawable.widget_status_dot_disabled)
+    rv.setTextViewText(R.id.widget_sub_label, context.getString(subRes))
+    rv.setImageViewResource(R.id.widget_status_dot, R.drawable.widget_status_dot_pending)
   }
 
   private fun statusDotFor(s: UsageSnapshot): Int = when {

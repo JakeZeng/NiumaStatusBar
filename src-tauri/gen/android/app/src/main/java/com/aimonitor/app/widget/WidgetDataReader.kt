@@ -20,6 +20,57 @@ object WidgetDataReader {
     private const val DB_RELATIVE = "ai-model-monitor/data.db"
 
     /**
+     * 查 usage_history 表最新一条的 timestamp（秒）。
+     *
+     * 用于 carousel service 判定数据是否「陈旧」，决定要不要 startActivity 唤起
+     * MainActivity 拉一次 poller。返回 null 表示 DB 不存在 / 没数据 / 读失败。
+     */
+    fun latestTimestamp(context: Context): Long? {
+        val dbPath = File(context.dataDir, DB_RELATIVE)
+        if (!dbPath.exists()) return null
+        return try {
+            SQLiteDatabase.openDatabase(
+                dbPath.absolutePath,
+                /* factory = */ null,
+                SQLiteDatabase.OPEN_READONLY
+            ).use { db ->
+                db.rawQuery("SELECT MAX(timestamp) FROM usage_history", null).use { c ->
+                    if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else null
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "latestTimestamp read failed", e)
+            null
+        }
+    }
+
+    /**
+     * 查 providers 表是否有 enabled 记录。
+     *
+     * 用于 renderEmpty 区分两种「空态」：
+     *   - false：用户压根没添加任何 provider → 提示 "请打开 App 配置"
+     *   - true：有 provider 但还没拉到数据 → 提示 "正在同步"
+     */
+    fun hasEnabledProviders(context: Context): Boolean {
+        val dbPath = File(context.dataDir, DB_RELATIVE)
+        if (!dbPath.exists()) return false
+        return try {
+            SQLiteDatabase.openDatabase(
+                dbPath.absolutePath,
+                /* factory = */ null,
+                SQLiteDatabase.OPEN_READONLY
+            ).use { db ->
+                db.rawQuery("SELECT 1 FROM providers WHERE is_enabled = 1 LIMIT 1", null).use { c ->
+                    c.moveToFirst()
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "hasEnabledProviders read failed", e)
+            false
+        }
+    }
+
+    /**
      * 读取 App 当前主题（settings 表 key=app_theme，由前端 ThemeManager
      * 经 set_app_theme 写入）。未设置/读取失败时返回 null，widget 回退
      * 到系统明暗配色。

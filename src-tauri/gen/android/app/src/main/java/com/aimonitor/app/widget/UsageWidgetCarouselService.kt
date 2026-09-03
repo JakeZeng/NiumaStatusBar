@@ -52,11 +52,31 @@ class UsageWidgetCarouselService : Service() {
 
         const val CHANNEL_ID = "niuma_widget_carousel"
         const val NOTIF_ID = 2001
+
+        /**
+         * DB 最新数据陈旧阈值（秒）。超过这个时间没有新 usage_history 写入，
+         * 就认为 poller 没在跑（app 进程被杀 / 没启动 / 网络失败），
+         * carousel service 主动 startActivity 唤起 MainActivity 拉一次。
+         */
+        private const val STALE_THRESHOLD_SEC = 5 * 60L
+
+        /**
+         * 唤起 MainActivity 的最小间隔（毫秒）。避免在 poller 还没跑出第一行
+         * usage_history 时反复 startActivity（每个 tick 5s，不节流会刷屏）。
+         */
+        private const val WAKE_THROTTLE_MS = 5 * 60_000L
     }
 
     private val handler = Handler(Looper.getMainLooper())
     private var index: Int = 0
     private val ioScope = CoroutineScope(Dispatchers.IO)
+    /**
+     * 上一次 startActivity 唤起 MainActivity 的时间戳（ms）。
+     * 用 throttle 避免 poller 还没跑出第一行 usage_history 时每 5s 刷一次
+     * startActivity。MainActivity 是 singleTask，唤起时复用现有实例，
+     * 但仍要避免在数据库写入前反复触发 WebView 加载 / 前台 Activity 切换。
+     */
+    private var lastWakeAtMs: Long = 0L
 
     private val tickRunnable = object : Runnable {
         override fun run() {
@@ -125,6 +145,17 @@ class UsageWidgetCarouselService : Service() {
             }
             val themeId = WidgetDataReader.appTheme(this@UsageWidgetCarouselService)
             val total = snapshots.size
+            // 检测 DB 是否需要唤醒 App：
+            //   - snapshots 为空：DB 完全没数据（app 没启动过 / poller 没跑过）
+            //   - latestTimestamp 陈旧：poller 停了（app 进程被杀 / 网络挂）
+            // 任一命中就 startActivity(MainActivity) 唤起，throttle 5 分钟。
+            val latestTs = try {
+                WidgetDataReader.latestTimestamp(this@UsageWidgetCarouselService)
+            } catch (t: Throwable) {
+                Log.w(TAG, "latestTimestamp read failed", t)
+                null
+            }
+            maybeWakeApp(snapshots, latestTs)
             val (currentIdx, nextIdx) = if (total == 0) {
                 // 没数据：index 保持 0，每 tick 都渲染空态。避免在轮播时无意义递增。
                 0 to 0
@@ -168,6 +199,46 @@ class UsageWidgetCarouselService : Service() {
             if (total > 0) {
                 index = nextIdx
             }
+        }
+    }
+
+    /**
+     * DB 完全空 / 数据陈旧时，startActivity 唤起 MainActivity。
+     *
+     * 调用方是 ioScope.launch 的协程，但 startActivity 必须在主线程跑（Android 14+
+     * 严格收紧 Service.startActivity）。这里发到 mainHandler 调一次。
+     *
+     * throttle 5 分钟：避免 poller 第一轮还没 tick 出数据前，每 5s 都 startActivity。
+     * MainActivity 是 singleTask，复用现有实例，但每次仍会触发 onNewIntent → WebView
+     * evaluateJavascript，节流才能让主线程别被反复打断。
+     */
+    private fun maybeWakeApp(snapshots: List<UsageSnapshot>, latestTs: Long?) {
+        val nowSec = System.currentTimeMillis() / 1000
+        val stale = latestTs == null || (nowSec - latestTs) > STALE_THRESHOLD_SEC
+        val empty = snapshots.isEmpty()
+        if (!stale && !empty) return
+
+        val nowMs = System.currentTimeMillis()
+        if (nowMs - lastWakeAtMs < WAKE_THROTTLE_MS) {
+            Log.d(TAG, "maybeWakeApp throttled (last=${nowMs - lastWakeAtMs}ms ago, stale=$stale, empty=$empty)")
+            return
+        }
+        lastWakeAtMs = nowMs
+
+        Log.d(TAG, "maybeWakeApp firing (stale=$stale, empty=$empty, latestTs=$latestTs, snapshots=${snapshots.size})")
+
+        val intent = Intent(this, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            // 标记这次是 widget 唤起的；MainActivity 会通过 WebView 调
+            // window.__NIUMA_WIDGET_WAKE__() 触发前端立即拉一次。
+            putExtra(MainActivity.EXTRA_FROM_WIDGET, true)
+        }
+        try {
+            startActivity(intent)
+        } catch (t: Throwable) {
+            // Android 12+ 后台启动 Activity 受限；foreground service 仍允许，但部分
+            // ROM 仍会拒绝。失败就静默，不影响 widget 渲染。
+            Log.w(TAG, "startActivity(MainActivity) failed", t)
         }
     }
 

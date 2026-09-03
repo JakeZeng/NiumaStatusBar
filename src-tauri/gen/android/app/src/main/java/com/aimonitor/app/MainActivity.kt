@@ -37,11 +37,20 @@ class MainActivity : TauriActivity() {
   /**
    * 把桌面组件带来的 provider_id extra 注入到前端 window.__NIUMA_SELECT_PROVIDER__。
    * WebView 尚未初始化时，存入待派发队列，等 onWebViewCreate 后再补发一次。
+   *
+   * 同时处理 widget 唤起信号（EXTRA_FROM_WIDGET = true）：
+   * 派发 window.__NIUMA_WIDGET_WAKE__() 触发前端立即 fetch 一次。
    */
   private fun handleWidgetIntent(intent: Intent?) {
-    val providerId = intent?.getStringExtra(WidgetLayoutBuilder.EXTRA_PROVIDER_ID) ?: return
-    pendingProviderId = providerId
-    dispatchPendingProviderId()
+    val providerId = intent?.getStringExtra(WidgetLayoutBuilder.EXTRA_PROVIDER_ID)
+    if (providerId != null) {
+      pendingProviderId = providerId
+      dispatchPendingProviderId()
+    }
+    if (intent?.getBooleanExtra(EXTRA_FROM_WIDGET, false) == true) {
+      pendingWidgetWake = true
+      dispatchPendingWidgetWake()
+    }
   }
 
   private fun dispatchPendingProviderId() {
@@ -49,6 +58,19 @@ class MainActivity : TauriActivity() {
     val wv = webViewRef ?: return
     val js = "window.__NIUMA_SELECT_PROVIDER__ && window.__NIUMA_SELECT_PROVIDER__(${pidJs(pid)});"
     wv.post { wv.evaluateJavascript(js, null) }
+  }
+
+  /**
+   * 把 widget wake 信号补发给前端。
+   * 前端注册 window.__NIUMA_WIDGET_WAKE__() 后，收到调用会立即 fetch 所有
+   * enabled provider 的 status（绕过 poller 的 interval 节流），DB 写入新数据
+   * 后 widget 5s tick 时能读到。
+   */
+  private fun dispatchPendingWidgetWake() {
+    val wv = webViewRef ?: return
+    val js = "window.__NIUMA_WIDGET_WAKE__ && window.__NIUMA_WIDGET_WAKE__();"
+    wv.post { wv.evaluateJavascript(js, null) }
+    pendingWidgetWake = false
   }
 
   private fun pidJs(id: String): String {
@@ -67,6 +89,14 @@ class MainActivity : TauriActivity() {
   }
 
   companion object {
+    /**
+     * widget 唤起 App 时携带的 extra key（boolean）。
+     * MainActivity 收到后会通过 WebView 调 window.__NIUMA_WIDGET_WAKE__()，
+     * 触发前端立即 fetch 一次 enabled providers。
+     */
+    const val EXTRA_FROM_WIDGET = "niuma_from_widget"
+
     @Volatile private var pendingProviderId: String? = null
+    @Volatile private var pendingWidgetWake: Boolean = false
   }
 }

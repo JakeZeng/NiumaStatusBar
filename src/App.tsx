@@ -72,6 +72,33 @@ export default function App() {
     };
   }, []);
 
+  // Android 桌面组件检测到 DB 陈旧/空时会 startActivity 唤起 MainActivity，
+  // 唤起时带 EXTRA_FROM_WIDGET=true，MainActivity 通过 WebView 调这个函数。
+  // 立即并行 fetch 所有 enabled provider 一次（绕过 poller 的 interval 节流），
+  // 让 widget 在 5s 内读到新数据。
+  useEffect(() => {
+    (window as unknown as {
+      __NIUMA_WIDGET_WAKE__?: () => Promise<void>;
+    }).__NIUMA_WIDGET_WAKE__ = async () => {
+      try {
+        const list = await api.getProviders();
+        const enabled = list.filter(p => p.isEnabled);
+        if (enabled.length === 0) return;
+        // 并行 fetch；单个失败不影响其他
+        await Promise.allSettled(
+          enabled.map(p => api.fetchProviderStatus(p.id))
+        );
+      } catch (err) {
+        console.error('__NIUMA_WIDGET_WAKE__ failed', err);
+      }
+    };
+    return () => {
+      delete (window as unknown as {
+        __NIUMA_WIDGET_WAKE__?: () => Promise<void>;
+      }).__NIUMA_WIDGET_WAKE__;
+    };
+  }, []);
+
   useEffect(() => {
     const unlisten = listen('close-requested', () => {
       setCloseDialogOpen(true);

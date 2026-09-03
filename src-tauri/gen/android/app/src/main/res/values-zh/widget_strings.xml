@@ -13,6 +13,11 @@
     <string name="widget_offline">离线 · 显示最近一次快照</string>
     <string name="widget_error">轮询失败</string>
 
+
+    <!-- v0.1.50+: 区分两种空态（轮播中 / 未配置供应商） -->
+    <string name="widget_syncing">同步中…</string>
+    <string name="widget_no_provider_hint">请打开 App 配置供应商</string>
+
     <!-- v0.1.47+: 兜底 layout 默认文案 -->
     <string name="widget_loading">加载中…</string>
     <string name="widget_sub_loading">等待首次刷新</string>

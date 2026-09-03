@@ -22,6 +22,10 @@
     <string name="widget_offline">Offline · showing last snapshot</string>
     <string name="widget_error">Polling failed</string>
 
+    <!-- v0.1.50+: 区分两种空态 -->
+    <string name="widget_syncing">Syncing…</string>
+    <string name="widget_no_provider_hint">Open the app to add a provider</string>
+
     <!-- v0.1.47+: 兜底 layout 默认文案，避免 "绿点 + 全空" 误导用户以为 widget 在工作 -->
     <string name="widget_loading">Loading…</string>
     <string name="widget_sub_loading">waiting for first refresh</string>
