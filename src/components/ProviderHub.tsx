@@ -159,7 +159,7 @@ export const ProviderHub = memo(function ProviderHub({ myProviders, onProvidersU
                 <button
                   key={cat}
                   onClick={() => setCategory(cat)}
-                  className={`px-3 py-1.5 text-sm rounded-lg transition-all
+                  className={`px-3 py-1.5 text-sm rounded-lg transition-all whitespace-nowrap
                     ${category === cat
                       ? 'bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-secondary)] text-white shadow-[var(--glow-primary)]'
                       : 'bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
@@ -260,7 +260,7 @@ export const ProviderHub = memo(function ProviderHub({ myProviders, onProvidersU
                         className="px-3 py-1.5 text-xs rounded-md
                                  bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-secondary)]
                                  text-white hover:shadow-[var(--glow-primary)] transition-all
-                                 flex items-center gap-1"
+                                 flex items-center gap-1 whitespace-nowrap"
                       >
                         {isAdded ? <><Key className="w-3 h-3" />更新 Key</> : <><Plus className="w-3 h-3" />添加</>}
                       </button>
@@ -273,22 +273,22 @@ export const ProviderHub = memo(function ProviderHub({ myProviders, onProvidersU
         </div>
 
         {/* Footer Stats */}
-        <div className="flex items-center justify-between gap-3 p-4 border-t border-[var(--border-color)] 
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between p-4 border-t border-[var(--border-color)] 
                        bg-[var(--bg-secondary)]/30 text-sm">
-          <div className="flex items-center gap-4 text-[var(--text-secondary)]">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[var(--text-secondary)]">
             <span>共 {catalog.length} 个供应商</span>
             <span>·</span>
             <span>已添加 {myProviders.length}</span>
             <span>·</span>
             <span>启用 {myProviders.filter(p => p.isEnabled).length}</span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 sm:shrink-0">
             <button
               onClick={onAddCustom}
               className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg
                        bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-secondary)]
                        text-white font-medium hover:shadow-[var(--glow-primary)]
-                       transition-all"
+                       transition-all whitespace-nowrap"
             >
               <Plus className="w-4 h-4" />
               自定义 Provider
@@ -297,7 +297,7 @@ export const ProviderHub = memo(function ProviderHub({ myProviders, onProvidersU
               onClick={onClose}
               className="px-4 py-1.5 rounded-lg bg-[var(--bg-card)] 
                        border border-[var(--border-color)] text-[var(--text-primary)]
-                       hover:border-[var(--color-primary)]"
+                       hover:border-[var(--color-primary)] whitespace-nowrap"
             >
               完成
             </button>

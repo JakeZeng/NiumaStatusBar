@@ -55,12 +55,13 @@ export function ImportExport({ onProvidersUpdated }: Props) {
   };
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <button
         onClick={handleExport}
         className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg
                    bg-[var(--bg-secondary)] text-[var(--text-secondary)]
-                   hover:text-[var(--color-primary)] transition-colors"
+                   hover:text-[var(--color-primary)] transition-colors
+                   shrink-0 whitespace-nowrap"
         title={t('config.export')}
       >
         <Download className="w-3.5 h-3.5" />
@@ -73,7 +74,7 @@ export function ImportExport({ onProvidersUpdated }: Props) {
         className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg
                    bg-[var(--bg-secondary)] text-[var(--text-secondary)]
                    hover:text-[var(--color-primary)] transition-colors
-                   disabled:opacity-50"
+                   disabled:opacity-50 shrink-0 whitespace-nowrap"
         title={t('config.import')}
       >
         <Upload className="w-3.5 h-3.5" />

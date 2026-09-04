@@ -280,7 +280,8 @@ export const LogViewer = memo(function LogViewer({ open, onClose }: Props) {
               onClick={resetFilters}
               className="px-3 py-2 text-xs text-[var(--text-secondary)]
                        hover:text-[var(--text-primary)]
-                       border border-[var(--border-color)] rounded-lg"
+                       border border-[var(--border-color)] rounded-lg
+                       shrink-0 whitespace-nowrap"
             >
               {t('logs.reset', '重置')}
             </button>
@@ -288,7 +289,7 @@ export const LogViewer = memo(function LogViewer({ open, onClose }: Props) {
 
           {/* Level chips */}
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-xs text-[var(--text-muted)] mr-1">
+            <span className="text-xs text-[var(--text-muted)] mr-1 shrink-0 whitespace-nowrap">
               {t('logs.level', '级别')}
             </span>
             {LEVELS.map(lv => (
@@ -305,7 +306,7 @@ export const LogViewer = memo(function LogViewer({ open, onClose }: Props) {
 
           {/* Category chips */}
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-xs text-[var(--text-muted)] mr-1">
+            <span className="text-xs text-[var(--text-muted)] mr-1 shrink-0 whitespace-nowrap">
               {t('logs.category', '类别')}
             </span>
             {CATEGORIES.map(cat => (
@@ -321,7 +322,7 @@ export const LogViewer = memo(function LogViewer({ open, onClose }: Props) {
 
           {/* Time range chips */}
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-xs text-[var(--text-muted)] mr-1">
+            <span className="text-xs text-[var(--text-muted)] mr-1 shrink-0 whitespace-nowrap">
               {t('logs.timeRange', '时间范围')}
             </span>
             {TIME_RANGES.map(r => (
@@ -375,7 +376,7 @@ export const LogViewer = memo(function LogViewer({ open, onClose }: Props) {
             className="absolute bottom-20 right-6 px-3 py-1.5 rounded-full
                      bg-[var(--color-primary)] text-white text-xs shadow-lg
                      hover:bg-[var(--color-secondary)] transition-colors
-                     flex items-center gap-1"
+                     flex items-center gap-1 whitespace-nowrap"
           >
             <ChevronDown className="w-3 h-3" />
             <span>{t('logs.actions.followLatest', '继续跟踪')}</span>
@@ -403,7 +404,7 @@ export const LogViewer = memo(function LogViewer({ open, onClose }: Props) {
             onClick={onClose}
             className="px-3 py-1.5 rounded-lg bg-[var(--bg-card)]
                      border border-[var(--border-color)] text-[var(--text-primary)]
-                     hover:border-[var(--color-primary)] text-xs"
+                     hover:border-[var(--color-primary)] text-xs whitespace-nowrap"
           >
             {t('logs.actions.close', '关闭')}
           </button>
@@ -460,7 +461,7 @@ function Chip({
   return (
     <button
       onClick={onClick}
-      className={`px-2.5 py-1 text-xs rounded-md transition-all flex items-center ${activeClass}`}
+      className={`px-2.5 py-1 text-xs rounded-md transition-all flex items-center whitespace-nowrap ${activeClass}`}
     >
       {children}
     </button>

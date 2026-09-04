@@ -111,7 +111,8 @@ export function HistoryChart({ providerId, providerName, providerType, refreshIn
             onClick={() => setRangeOpen(!rangeOpen)}
             className="flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg
                        bg-[var(--bg-secondary)] text-[var(--text-secondary)]
-                       hover:text-[var(--text-primary)] transition-colors"
+                       hover:text-[var(--text-primary)] transition-colors
+                       shrink-0 whitespace-nowrap"
           >
             <Clock className="w-3.5 h-3.5" />
             {t(currentRange.labelKey)}

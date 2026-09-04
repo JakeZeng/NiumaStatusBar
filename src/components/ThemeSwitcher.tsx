@@ -21,7 +21,7 @@ export function ThemeSwitcher() {
         className="flex items-center gap-2 px-4 py-2 rounded-lg 
                    bg-[var(--bg-card)] border border-[var(--border-color)]
                    text-[var(--text-primary)] 
-                   hover:shadow-[var(--glow-primary)] transition-all"
+                   hover:shadow-[var(--glow-primary)] transition-all whitespace-nowrap"
       >
         <Palette className="w-4 h-4" />
         <span>{currentTheme.icon}</span>
