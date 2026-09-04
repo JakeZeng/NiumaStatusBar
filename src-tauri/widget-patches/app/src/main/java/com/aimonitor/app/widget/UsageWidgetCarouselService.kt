@@ -26,7 +26,7 @@ import kotlinx.coroutines.launch
  *
  * 设计要点：
  * - AppWidgetProvider 的 [android.appwidget.AppWidgetProviderInfo.updatePeriodMillis]
- *   系统强制最小 30 分钟（无前台服务情况下），无法满足「5 秒切换 provider」的需求，
+ *   系统强制最小 30 分钟（无前台服务情况下），无法满足「30 秒切换 provider」的需求，
  *   故用前台服务持有轮播循环。
  * - 每次 tick 直读主进程 SQLite（已开 WAL + busy_timeout=5000，跨进程并发安全），
  *   不再额外走 Tauri IPC 或 widget_snapshot.json。
@@ -35,7 +35,7 @@ import kotlinx.coroutines.launch
  * - onDisabled 触发 ACTION_STOP；widget 全部移除时 service 自退出。
  *
  * 为什么不用 WorkManager / AlarmManager：
- *   这两个最低粒度是 15 分钟级，且 5 秒轮播太频繁会触发系统节流（Doze/Standby）。
+ *   这两个最低粒度是 15 分钟级，且 30 秒轮播太频繁会触发系统节流（Doze/Standby）。
  *   前台服务是 Android 唯一允许 ~秒级稳定循环的方式，与 StatusWidgetService 同款
  *   方案，但本 service 只服务 1x2 widget 的 UsageWidgetProvider。
  */
@@ -47,8 +47,8 @@ class UsageWidgetCarouselService : Service() {
         const val ACTION_START = "com.aimonitor.app.widget.CAROUSEL_START"
         const val ACTION_STOP = "com.aimonitor.app.widget.CAROUSEL_STOP"
 
-        /** 轮播间隔：5 秒。改这里要同步 README/CLAUDE.md 描述。 */
-        const val INTERVAL_MS = 5000L
+        /** 轮播间隔：30 秒。改这里要同步 README/CLAUDE.md 描述。 */
+        const val INTERVAL_MS = 30_000L
 
         const val CHANNEL_ID = "niuma_widget_carousel"
         const val NOTIF_ID = 2001
@@ -70,9 +70,46 @@ class UsageWidgetCarouselService : Service() {
 
         /**
          * 唤起 MainActivity 的最小间隔（毫秒）。避免在 poller 还没跑出第一行
-         * usage_history 时反复 startActivity（每个 tick 5s，不节流会刷屏）。
+         * usage_history 时反复 startActivity（每个 tick 30s，不节流会刷屏）。
          */
         private const val WAKE_THROTTLE_MS = 5 * 60_000L
+
+        /**
+         * 启动 carousel 前台服务。所有异常在内部吞掉并记日志，绝不外抛——
+         * 调用方可能是 BroadcastReceiver（onUpdate / onEnabled）或 MainActivity。
+         *
+         * 重要：从 AppWidgetProvider 的 broadcast 回调里调用本方法时，若 App
+         * 不在前台，Android 12+（API 31）会抛 ForegroundServiceStartNotAllowedException
+         * 并静默吞掉：service 起不来但首屏渲染（refreshAllBlocking）照常。
+         * 真正可靠的前台启动窗口是 MainActivity（App 在前台），所以 MainActivity
+         * 的 onResume 也会调本方法作为兜底。
+         */
+        fun start(context: Context) {
+            runCatching {
+                val intent = Intent(context, UsageWidgetCarouselService::class.java).apply {
+                    action = ACTION_START
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            }.onFailure { t ->
+                Log.w(TAG, "start() carousel service failed (ignored)", t)
+            }
+        }
+
+        /** 停止 carousel 前台服务（最后一个 widget 被移除时调用）。 */
+        fun stop(context: Context) {
+            runCatching {
+                val intent = Intent(context, UsageWidgetCarouselService::class.java).apply {
+                    action = ACTION_STOP
+                }
+                context.startService(intent)
+            }.onFailure { t ->
+                Log.w(TAG, "stop() carousel service failed (ignored)", t)
+            }
+        }
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -80,7 +117,7 @@ class UsageWidgetCarouselService : Service() {
     private val ioScope = CoroutineScope(Dispatchers.IO)
     /**
      * 上一次 startActivity 唤起 MainActivity 的时间戳（ms）。
-     * 用 throttle 避免 poller 还没跑出第一行 usage_history 时每 5s 刷一次
+     * 用 throttle 避免 poller 还没跑出第一行 usage_history 时每 30s 刷一次
      * startActivity。MainActivity 是 singleTask，唤起时复用现有实例，
      * 但仍要避免在数据库写入前反复触发 WebView 加载 / 前台 Activity 切换。
      */
@@ -219,7 +256,7 @@ class UsageWidgetCarouselService : Service() {
      * 调用方是 ioScope.launch 的协程，但 startActivity 必须在主线程跑（Android 14+
      * 严格收紧 Service.startActivity）。这里发到 mainHandler 调一次。
      *
-     * throttle 5 分钟：避免 poller 第一轮还没 tick 出数据前，每 5s 都 startActivity。
+     * throttle 5 分钟：避免 poller 第一轮还没 tick 出数据前，每 30s 都 startActivity。
      * MainActivity 是 singleTask，复用现有实例，但每次仍会触发 onNewIntent → WebView
      * evaluateJavascript，节流才能让主线程别被反复打断。
      */

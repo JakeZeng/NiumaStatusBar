@@ -45,7 +45,7 @@
         <!-- ===== 桌面组件（AppWidget）=====
              1x2 横条 widget（1 行高 × 2 列宽）。v0.1.37 起只发布一个尺寸，
              早期 2x2 / 2x3 / 2x4 三种 receiver 全部移除。
-             v0.1.39 起横条轮播显示所有 enabled provider，每 5 秒切换一次。
+             v0.1.39 起横条轮播显示所有 enabled provider，每 30 秒切换一次。
              widget 进程通过 SQLite 直读与主进程共享 usage_history 数据；
              主进程 storage.rs 已启用 WAL + busy_timeout 避免锁竞争。
              高频轮播由 [UsageWidgetCarouselService] 前台服务持有，规避系统
@@ -62,7 +62,7 @@
                 android:resource="@xml/widget_provider_info_1x2" />
         </receiver>
 
-        <!-- 1x2 widget 轮播服务：每 5 秒读 SQLite 渲染下一档 provider。
+        <!-- 1x2 widget 轮播服务：每 30 秒读 SQLite 渲染下一档 provider。
              foregroundServiceType=specialUse 是因为 widget 轮播不属于
              location/mediaProjection/dataSync 等任何一类标准 FGS 用途，
              且不联网传输；property 文本在审核侧用于解释该用途。 -->

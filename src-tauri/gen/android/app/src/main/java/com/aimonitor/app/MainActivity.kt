@@ -1,10 +1,15 @@
 package com.aimonitor.app
 
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.webkit.WebView
 import androidx.activity.enableEdgeToEdge
+import com.aimonitor.app.widget.UsageWidgetCarouselService
+import com.aimonitor.app.widget.UsageWidgetProvider
 import com.aimonitor.app.widget.WidgetLayoutBuilder
 
 class MainActivity : TauriActivity() {
@@ -14,6 +19,33 @@ class MainActivity : TauriActivity() {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
     handleWidgetIntent(intent)
+  }
+
+  override fun onResume() {
+    super.onResume()
+    // v0.1.52：从「前台窗口」兜底启动 widget 轮播前台服务。
+    // 桌面组件只能在 AppWidgetProvider 的 broadcast 回调里尝试启动 service，
+    // 而 App 不在前台时 Android 12+ 会拦截后台 startForegroundService
+    // （ForegroundServiceStartNotAllowedException），导致轮播 service 起不来、
+    // 多 provider 永远停在首屏那一帧。这里 App 已在前台，启动合法，
+    // 启动后 service 常驻（带常驻通知），即使 App 退到后台 widget 仍持续轮播。
+    startCarouselIfWidgetExists()
+  }
+
+  /**
+   * 仅当确实存在已添加的 1x2 widget 实例时才启动轮播服务，
+   * 避免用户没用 widget 时凭空出现常驻通知。
+   */
+  private fun startCarouselIfWidgetExists() {
+    try {
+      val ids = AppWidgetManager.getInstance(this)
+        .getAppWidgetIds(ComponentName(this, UsageWidgetProvider::class.java))
+      if (ids != null && ids.isNotEmpty()) {
+        UsageWidgetCarouselService.start(this)
+      }
+    } catch (t: Throwable) {
+      Log.w("MainActivity", "startCarouselIfWidgetExists failed", t)
+    }
   }
 
   override fun onNewIntent(intent: Intent) {
