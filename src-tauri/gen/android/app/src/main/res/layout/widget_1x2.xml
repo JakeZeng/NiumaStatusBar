@@ -10,7 +10,7 @@
 
   整个 widget 横铺 launcher 一行，节省垂直空间。
 
-  v0.1.39 起：横条本身轮播所有 enabled provider，每 5 秒切换一次。
+  v0.1.39 起：横条本身轮播所有 enabled provider，每 30 秒切换一次。
   单 provider 时 widget_page_index 默认 gone，不显示。
 
   v0.1.40 起：minWidth 从 180dp 调到 160dp，paddingHorizontal 从 10dp

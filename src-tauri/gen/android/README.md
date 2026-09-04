@@ -22,7 +22,7 @@ app/src/main/
 │                                             # + FOREGROUND_SERVICE_SPECIAL_USE
 ├── java/com/aimonitor/app/widget/
 │   ├── UsageWidgetProvider.kt                # 唯一 receiver（拉起 carousel service）
-│   ├── UsageWidgetCarouselService.kt         # 前台服务，每 5 秒轮播所有 provider
+│   ├── UsageWidgetCarouselService.kt         # 前台服务，每 30 秒轮播所有 provider（index 持久化防重启卡首帧）
 │   ├── WidgetLayoutBuilder.kt                # 1x2 渲染逻辑（带 index 轮播参数）
 │   ├── WidgetTheme.kt                        # 配色（apply() 无 size 参数）
 │   ├── UsageSnapshot.kt                      # 数据快照（git tracked，本目录不收）

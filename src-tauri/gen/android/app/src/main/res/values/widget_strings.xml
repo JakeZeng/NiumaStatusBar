@@ -51,5 +51,5 @@
     <string name="widget_carousel_channel_name">Widget refresh</string>
     <string name="widget_carousel_channel_desc">Keeps the 1x2 widget rotating through providers</string>
     <string name="widget_carousel_notif_title">AI Monitor</string>
-    <string name="widget_carousel_notif_text">Widget is rotating providers every 5 s</string>
+    <string name="widget_carousel_notif_text">Widget is rotating providers every 30 s</string>
 </resources>

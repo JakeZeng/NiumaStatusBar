@@ -72,7 +72,7 @@
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Periodic home-screen widget refresh: read locally cached usage_history and rotate the displayed provider every 5 seconds. No network transfer, no user data leaves the device." />
+                android:value="Periodic home-screen widget refresh: read locally cached usage_history and rotate the displayed provider every 30 seconds. No network transfer, no user data leaves the device." />
         </service>
     </application>
 </manifest>

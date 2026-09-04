@@ -9,6 +9,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.content.SharedPreferences
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -50,8 +51,19 @@ class UsageWidgetCarouselService : Service() {
         /** 轮播间隔：30 秒。改这里要同步 README/CLAUDE.md 描述。 */
         const val INTERVAL_MS = 30_000L
 
+        /**
+         * 首次 tick 提前到 3 秒：service 常被系统/OEM 杀掉又重启，index 是实例
+         * 成员变量，每次重启都会归零 → 多 provider 永远停在首屏那一帧。提前首
+         * tick 让 index 尽快推进并落盘（见 [saveIndex]），被杀重启后能接着轮。
+         */
+        const val FIRST_TICK_DELAY_MS = 3_000L
+
         const val CHANNEL_ID = "niuma_widget_carousel"
         const val NOTIF_ID = 2001
+
+        /** 轮播 index 持久化，避免 service 被杀重启后 index 归零卡在首供应商。 */
+        private const val PREFS_NAME = "niuma_widget_carousel"
+        private const val KEY_INDEX = "carousel_index"
 
         /**
          * DB 最新数据陈旧阈值（秒）。超过这个时间没有新 usage_history 写入，
@@ -115,6 +127,9 @@ class UsageWidgetCarouselService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private var index: Int = 0
     private val ioScope = CoroutineScope(Dispatchers.IO)
+    private val prefs: SharedPreferences by lazy {
+        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    }
     /**
      * 上一次 startActivity 唤起 MainActivity 的时间戳（ms）。
      * 用 throttle 避免 poller 还没跑出第一行 usage_history 时每 30s 刷一次
@@ -139,9 +154,12 @@ class UsageWidgetCarouselService : Service() {
         super.onCreate()
         ensureChannel()
         startForegroundCompat()
-        // 首次延迟一个 INTERVAL 再开始，让 onUpdate 先把 index 校准为 0
-        handler.postDelayed(tickRunnable, INTERVAL_MS)
-        Log.d(TAG, "onCreate, first tick in ${INTERVAL_MS}ms")
+        // 从持久化恢复 index：service 被系统/OEM 杀掉重启后，index 不会归零
+        // 卡在首供应商，而是接着上次的进度轮。
+        index = loadIndex()
+        // 首次 tick 提前到 FIRST_TICK_DELAY_MS（见常量注释），尽快推进并落盘。
+        handler.postDelayed(tickRunnable, FIRST_TICK_DELAY_MS)
+        Log.d(TAG, "onCreate, first tick in ${FIRST_TICK_DELAY_MS}ms, restored index=$index")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -154,7 +172,7 @@ class UsageWidgetCarouselService : Service() {
         startForegroundCompat()
         // 重新调度（避免 onCreate 之后 handler 已被 post 的 runnable 在某些重启路径上 lost）
         handler.removeCallbacks(tickRunnable)
-        handler.postDelayed(tickRunnable, INTERVAL_MS)
+        handler.postDelayed(tickRunnable, FIRST_TICK_DELAY_MS)
         return START_STICKY
     }
 
@@ -164,6 +182,17 @@ class UsageWidgetCarouselService : Service() {
         handler.removeCallbacks(tickRunnable)
         Log.d(TAG, "onDestroy")
         super.onDestroy()
+    }
+
+    // ===== 轮播 index 持久化（防止 service 被杀重启后 index 归零卡首帧）=====
+
+    private fun loadIndex(): Int {
+        return runCatching { prefs.getInt(KEY_INDEX, 0).coerceAtLeast(0) }
+            .getOrDefault(0)
+    }
+
+    private fun saveIndex(v: Int) {
+        runCatching { prefs.edit().putInt(KEY_INDEX, v).apply() }
     }
 
     // ===== 核心轮播逻辑 =====
@@ -246,6 +275,8 @@ class UsageWidgetCarouselService : Service() {
                 }
                 // 在主线程派发完成后再递增 index，避免读盘慢时主线程用了过期的 current
                 index = next
+                // 落盘：service 被杀重启后能从这里恢复，接着轮而不是卡在首供应商
+                saveIndex(index)
             }
         }
     }
