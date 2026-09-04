@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  2x2 widget provider info（v0.1.52+）：
+
+  物理尺寸：minWidth=180dp / minHeight=180dp，
+  targetCellWidth=2 / targetCellHeight=2，resizeMode="none"。
+
+  渲染形态：
+  - Coding Plan provider：3 环并排（5H / 1W / 1M），中心标签 + 环下百分比 + 第 4 行重置
+  - 余额型 provider：单大环，中心余额 + 环下已用% + 第 4 行余额/总额
+
+  initialLayout 选 widget_2x2_coding.xml 作默认（绝大多数首次添加的
+  2x2 widget 会经历几秒空态，AppWidgetProvider.onUpdate 同步首屏渲染会
+  立即覆盖）。
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="180dp"
+    android:minHeight="180dp"
+    android:targetCellWidth="2"
+    android:targetCellHeight="2"
+    android:widgetCategory="home_screen"
+    android:initialLayout="@layout/widget_2x2_coding"
+    android:previewLayout="@layout/widget_2x2_coding"
+    android:resizeMode="none"
+    android:description="@string/widget_desc_ring"
+    android:updatePeriodMillis="1800000" />

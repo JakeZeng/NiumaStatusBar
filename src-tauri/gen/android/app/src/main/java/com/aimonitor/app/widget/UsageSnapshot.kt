@@ -73,6 +73,84 @@ data class UsageSnapshot(
     }
 
     /**
+     * 1M（月度）剩余百分比反算。
+     *
+     * 背景：`usage_history` 表里有 `quota_month_total / quota_month_used`，
+     * 但没有 `quota_month_remaining_percent`（5h / week 都有）。
+     * 为让 2x2 环图三档（5H / 1W / 1M）数据形状一致，这里从 total/used 反算。
+     *
+     * @return 0..100 的剩余百分比，null 表示 total/used 缺失或 total<=0
+     */
+    fun monthRemainingPercent(): Double? {
+        val total = quotaMonthTotal ?: return null
+        val used = quotaMonthUsed ?: return null
+        if (total <= 0) return null
+        return ((total - used) / total * 100).coerceIn(0.0, 100.0)
+    }
+
+    /**
+     * 相对重置时间标签（环图 2x2 第 4 行专用）。
+     *
+     * 输入是后端 UsageStatus 推过来的 *_reset_at 秒级时间戳，
+     * 输出形如 "5H 0:23 后" / "周 5d 12h 后" / "月 12d 后"。
+     *
+     * 复用 1x2 widget 既有 [subLabelFor] 的语义（来自前端
+     * src/lib/format.ts::formatRelativeReset），但 widget 端在
+     * Kotlin 实现以避免跨语言依赖。
+     *
+     * @param period "5h" | "week" | "month"
+     * @param nowSec 当前时间（秒），便于单测注入
+     * @return null 表示该周期没有 reset_at 数据（usage_history 表里
+     *         也没存 1M 的 reset_at，所以 1M 必然返回 null）
+     */
+    fun relativeResetLabel(period: String, nowSec: Long = System.currentTimeMillis() / 1000): String? {
+        val resetAt = when (period) {
+            "5h" -> quota5hResetAt
+            "week" -> quotaWeekResetAt
+            "month" -> null  // 1M reset_at 暂未持久化
+            else -> return null
+        } ?: return null
+        val diffSec = (resetAt - nowSec).coerceAtLeast(0L)
+        return when (period) {
+            "5h" -> formatShortRelative(diffSec, hours = true, withDays = false)
+            "week" -> formatShortRelative(diffSec, hours = true, withDays = true)
+            "month" -> formatShortRelative(diffSec, hours = false, withDays = true)
+            else -> null
+        }
+    }
+
+    /**
+     * 短相对时间格式器。"Xh Ym 后" / "Xd Yh 后"。
+     *
+     * @param diffSec 距目标时间的秒数（已截负）
+     * @param hours 是否显示"小时"单位（5h / week 周期剩余通常 < 24h）
+     * @param withDays 是否升级到"天"粒度（week / month 周期会跨天）
+     */
+    private fun formatShortRelative(diffSec: Long, hours: Boolean, withDays: Boolean): String {
+        if (diffSec < 60) return "< 1m"
+        val totalMin = diffSec / 60
+        return if (withDays) {
+            val d = totalMin / (60 * 24)
+            val h = (totalMin % (60 * 24)) / 60
+            when {
+                d > 0 -> "${d}d ${h}h 后"
+                h > 0 -> "${h}h 后"
+                else -> "${totalMin}m 后"
+            }
+        } else if (hours) {
+            val h = totalMin / 60
+            val m = totalMin % 60
+            when {
+                h > 0 -> "${h}h ${m}m 后"
+                else -> "${m}m 后"
+            }
+        } else {
+            val m = totalMin
+            "${m}m 后"
+        }
+    }
+
+    /**
      * Coding Plan 的最小周期及其剩余值/百分比。
      * 优先级：5h > week > month
      */

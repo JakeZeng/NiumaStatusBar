@@ -8,8 +8,10 @@
 <resources>
     <!-- AppWidgetProvider 列表里显示的标签与说明 -->
     <string name="widget_label_one">AI Monitor · 1x2 Bar</string>
+    <string name="widget_label_ring">AI Monitor · 2x2 Ring</string>
 
     <string name="widget_desc_one">One provider · balance at a glance</string>
+    <string name="widget_desc_ring">Coding Plan 5H/Week/Month rings · or balance ring</string>
 
     <!-- Quota 行标签 -->
     <string name="widget_5h">5H</string>
@@ -52,4 +54,14 @@
     <string name="widget_carousel_channel_desc">Keeps the 1x2 widget rotating through providers</string>
     <string name="widget_carousel_notif_title">AI Monitor</string>
     <string name="widget_carousel_notif_text">Widget is rotating providers every 30 s</string>
+
+    <!-- 2x2 环图 widget（v0.1.52+）：独立的轮播前台服务 -->
+    <string name="widget_ring_channel_name">Ring widget refresh</string>
+    <string name="widget_ring_channel_desc">Keeps the 2x2 ring widget rotating through providers</string>
+    <string name="widget_ring_notif_title">AI Monitor</string>
+    <string name="widget_ring_notif_text">Ring widget is rotating providers every 30 s</string>
+
+    <!-- 2x2 余额型 fallback 副文本模板 -->
+    <string name="widget_balance_used">Used %1$d%%</string>
+    <string name="widget_balance_row">Balance %1$s  │  Limit %2$s</string>
 </resources>

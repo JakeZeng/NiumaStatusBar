@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  2x2 widget · 余额型单环布局（v0.1.52+）
+
+  RingWidgetLayoutBuilder 检测到非 Coding Plan provider 时用此 layout。
+  与 widget_2x2_coding 共用 widget_root / widget_status_dot /
+  widget_provider_name / widget_page_index / widget_updated_at id，
+  builder 的 setTextViewText / setImageViewResource 调用两边都能命中。
+
+  4 行 vertical LinearLayout：
+    第 1 行 24dp：状态点 + provider 名 + 页码
+    第 2-3 行 ~98dp：单大环居中（~96dp 直径），中心显示余额金额
+    第 4 行 14dp："余额 ¥X  │  总额 ¥Y"
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/widget_background"
+    android:paddingHorizontal="10dp"
+    android:paddingVertical="8dp">
+
+    <!-- 第 1 行：状态点 + 供应商名 + 页码 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <ImageView
+            android:id="@+id/widget_status_dot"
+            android:layout_width="8dp"
+            android:layout_height="8dp"
+            android:src="@drawable/widget_status_dot_pending"
+            android:contentDescription="@string/widget_status_pending" />
+
+        <TextView
+            android:id="@+id/widget_provider_name"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="6dp"
+            android:text="@string/widget_loading"
+            android:textColor="@color/widget_text_primary"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:singleLine="true"
+            android:ellipsize="end"
+            tools:text="Provider" />
+
+        <TextView
+            android:id="@+id/widget_page_index"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:textColor="@color/widget_text_muted"
+            android:textSize="10sp"
+            android:singleLine="true"
+            android:visibility="gone"
+            tools:text="1/1" />
+    </LinearLayout>
+
+    <!-- 第 2-3 行：单大环居中（环图 + 环下已用%） -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:layout_marginTop="4dp">
+
+        <ImageView
+            android:id="@+id/widget_ring_balance"
+            android:layout_width="96dp"
+            android:layout_height="96dp"
+            android:contentDescription="@string/widget_balance" />
+
+        <TextView
+            android:id="@+id/widget_pct_balance"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="—"
+            android:textColor="@color/widget_text_primary"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:singleLine="true"
+            tools:text="已用 35%" />
+    </LinearLayout>
+
+    <!-- 第 4 行：余额 / 总额 -->
+    <TextView
+        android:id="@+id/widget_balance_row"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="@string/widget_sub_loading"
+        android:textColor="@color/widget_text_secondary"
+        android:textSize="10sp"
+        android:singleLine="true"
+        android:ellipsize="end"
+        android:gravity="center"
+        tools:text="余额 ¥128  │  总额 ¥200" />
+
+    <!-- 隐藏字段（保留以复用 setTextViewText 调用） -->
+    <TextView
+        android:id="@+id/widget_updated_at"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:visibility="gone" />
+</LinearLayout>
