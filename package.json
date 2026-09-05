@@ -1,7 +1,7 @@
 {
   "name": "ai-model-monitor",
   "private": true,
-  "version": "0.1.18",
+  "version": "0.1.56",
   "type": "module",
   "scripts": {
     "dev": "vite",
