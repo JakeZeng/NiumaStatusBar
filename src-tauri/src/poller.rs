@@ -79,7 +79,9 @@ impl Poller {
                     LogCategory::Poller,
                     Some(provider.id.clone()),
                     "start_all skip disabled",
-                    Some(serde_json::json!({ "name": provider.name, "provider": provider.provider })),
+                    Some(
+                        serde_json::json!({ "name": provider.name, "provider": provider.provider }),
+                    ),
                 );
             }
         }
@@ -124,9 +126,7 @@ impl Poller {
 
                 // 检查 Provider 是否仍然启用
                 let current = manager.get_providers().await;
-                let still_enabled = current
-                    .iter()
-                    .any(|p| p.id == provider.id && p.is_enabled);
+                let still_enabled = current.iter().any(|p| p.id == provider.id && p.is_enabled);
                 if !still_enabled {
                     break;
                 }
@@ -167,7 +167,9 @@ impl Poller {
                         );
                     }
                 }
-                manager.update_status(provider.id.clone(), status.clone()).await;
+                manager
+                    .update_status(provider.id.clone(), status.clone())
+                    .await;
                 let _ = app_handle.emit("status-update", &status);
                 if let Some(l) = logger {
                     l.log(
@@ -186,7 +188,9 @@ impl Poller {
                     last_error: Some(err),
                     ..Default::default()
                 };
-                manager.update_status(provider.id.clone(), error_status.clone()).await;
+                manager
+                    .update_status(provider.id.clone(), error_status.clone())
+                    .await;
                 let _ = app_handle.emit("status-update", &error_status);
                 if let Some(l) = logger {
                     l.log(

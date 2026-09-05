@@ -152,11 +152,12 @@ impl ProviderManager {
         );
 
         let logger = self.logger_ref();
-        let log_helper = |lv: LogLevel, cat: LogCategory, msg: &str, det: Option<serde_json::Value>| {
-            if let Some(l) = &logger {
-                l.log(lv, cat, Some(provider.id.clone()), msg.to_string(), det);
-            }
-        };
+        let log_helper =
+            |lv: LogLevel, cat: LogCategory, msg: &str, det: Option<serde_json::Value>| {
+                if let Some(l) = &logger {
+                    l.log(lv, cat, Some(provider.id.clone()), msg.to_string(), det);
+                }
+            };
 
         // 阶段 A 入口埋点
         log_helper(
@@ -183,18 +184,16 @@ impl ProviderManager {
 
         // 是否会注入 JSON body（决定要不要在这里手动塞 Content-Type）
         let url_lower = url.to_lowercase();
-        let is_volc_coding = provider.provider == "volcengine_coding"
-            || provider.provider == "volcengine_token";
+        let is_volc_coding =
+            provider.provider == "volcengine_coding" || provider.provider == "volcengine_token";
         let is_chat_completions = url_lower.contains("/chat/completions");
         let is_ark_coding_endpoint = url_lower.contains("/api/coding/v3");
-        let is_ark_cn_host = url_lower.contains("ark.cn-beijing.volces.com")
-            || url_lower.contains("ark.volces.com");
-        let is_ark_endpoint = is_ark_cn_host
-            || url_lower.contains("volces.com/api/")
-            || is_ark_coding_endpoint;
+        let is_ark_cn_host =
+            url_lower.contains("ark.cn-beijing.volces.com") || url_lower.contains("ark.volces.com");
+        let is_ark_endpoint =
+            is_ark_cn_host || url_lower.contains("volces.com/api/") || is_ark_coding_endpoint;
         let is_post = provider.query_method == "POST";
-        let needs_body = is_post
-            && (is_volc_coding || is_chat_completions || is_ark_endpoint);
+        let needs_body = is_post && (is_volc_coding || is_chat_completions || is_ark_endpoint);
 
         // 注入用户自定义 headers——若马上要 .json() 则跳过 Content-Type，避免
         // reqwest 内部追加导致重复头（火山方舟网关会因此返回 400 "缺少 message"）。
@@ -214,7 +213,9 @@ impl ProviderManager {
         let mut extra_query: Vec<(String, String)> = Vec::new();
         if let Some(params) = provider.query_params.as_object() {
             for (key, value) in params {
-                if key == "model" { continue; }
+                if key == "model" {
+                    continue;
+                }
                 if let Some(s) = value.as_str() {
                     extra_query.push((key.clone(), s.to_string()));
                 }
@@ -396,7 +397,10 @@ impl ProviderManager {
                                 .map(|(k, v)| {
                                     let val_preview = match v {
                                         serde_json::Value::String(s) => {
-                                            format!("str(\"{}\")", s.chars().take(50).collect::<String>())
+                                            format!(
+                                                "str(\"{}\")",
+                                                s.chars().take(50).collect::<String>()
+                                            )
                                         }
                                         serde_json::Value::Number(n) => format!("num({})", n),
                                         serde_json::Value::Bool(b) => format!("bool({})", b),
@@ -443,16 +447,15 @@ impl ProviderManager {
         if status_code >= 400 {
             let body_excerpt = truncate(&body, 300);
             // Coding Plan 场景下，如果是模型不存在/未授权等错误，清模型缓存让下次轮询重拉
-            let is_volc = provider.provider == "volcengine_coding"
-                || provider.provider == "volcengine_token";
+            let is_volc =
+                provider.provider == "volcengine_coding" || provider.provider == "volcengine_token";
             let body_lower = body.to_lowercase();
-            let likely_bad_model = is_volc && (
-                body_lower.contains("model") &&
-                    (body_lower.contains("not found")
-                     || body_lower.contains("not exist")
-                     || body_lower.contains("invalid")
-                     || body_lower.contains("unavailable"))
-            );
+            let likely_bad_model = is_volc
+                && (body_lower.contains("model")
+                    && (body_lower.contains("not found")
+                        || body_lower.contains("not exist")
+                        || body_lower.contains("invalid")
+                        || body_lower.contains("unavailable")));
             if likely_bad_model {
                 self.invalidate_coding_model_cache(&provider.id).await;
                 log_helper(
@@ -797,8 +800,12 @@ fn parse_minimax_remains(json: &serde_json::Value, status: &mut UsageStatus) -> 
         .and_then(|v| v.as_array());
 
     let mut hits: Vec<&'static str> = Vec::new();
-    let Some(arr) = model_remains else { return hits; };
-    let Some(first) = arr.first() else { return hits; };
+    let Some(arr) = model_remains else {
+        return hits;
+    };
+    let Some(first) = arr.first() else {
+        return hits;
+    };
 
     // ===== 5 小时窗口 =====
     if status.quota_5h_remaining_percent.is_none() {
@@ -851,6 +858,7 @@ fn parse_minimax_remains(json: &serde_json::Value, status: &mut UsageStatus) -> 
     if status.quota_week_remaining_percent.is_none() {
         if let Some(v) = first
             .get("current_weekly_remaining_percent")
+            .or(first.get("interval_weekly_remaining_percent"))
             .and_then(|v| v.as_f64())
         {
             status.quota_week_remaining_percent = Some(v);
@@ -862,6 +870,7 @@ fn parse_minimax_remains(json: &serde_json::Value, status: &mut UsageStatus) -> 
             .get("current_weekly_total_count")
             .or(first.get("weekly_total_count"))
             .or(first.get("week_total_count"))
+            .or(first.get("interval_weekly_total_count"))
             .and_then(|v| v.as_f64())
         {
             status.quota_week_total = Some(v);
@@ -873,6 +882,7 @@ fn parse_minimax_remains(json: &serde_json::Value, status: &mut UsageStatus) -> 
             .get("current_weekly_usage_count")
             .or(first.get("weekly_usage_count"))
             .or(first.get("week_usage_count"))
+            .or(first.get("interval_weekly_usage_count"))
             .and_then(|v| v.as_f64())
         {
             status.quota_week_used = Some(v);
@@ -890,6 +900,7 @@ fn parse_minimax_remains(json: &serde_json::Value, status: &mut UsageStatus) -> 
             .or(first.get("current_weekly_end"))
             .or(first.get("weekly_end"))
             .or(first.get("week_end"))
+            .or(first.get("interval_weekly_end"))
             .and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64)))
         {
             status.quota_week_reset_at = Some(ms / 1000);
@@ -942,14 +953,15 @@ impl ProviderManager {
         // 2) GET /api/coding/v3/models（与 chat/completions 同 host，base_url 已带 /api/coding/v3）
         //    base_url 规范："https://ark.cn-beijing.volces.com/api/coding/v3"
         //    我们追加 /models
-        let url = format!(
-            "{}/models",
-            provider.base_url.trim_end_matches('/')
-        );
-        let mut req = self.client.get(&url)
+        let url = format!("{}/models", provider.base_url.trim_end_matches('/'));
+        let mut req = self
+            .client
+            .get(&url)
             .header("Authorization", format!("Bearer {}", provider.api_key));
         for (k, v) in &provider.query_headers {
-            if k.eq_ignore_ascii_case("content-type") { continue; }
+            if k.eq_ignore_ascii_case("content-type") {
+                continue;
+            }
             req = req.header(k, v);
         }
 
@@ -992,11 +1004,15 @@ impl ProviderManager {
         }
 
         // 3) 解析 JSON：data[0].id 优先，也兼容 { "models": [...], "data": [...] }
-        let model = serde_json::from_str::<serde_json::Value>(&body).ok().and_then(|j| {
-            let arr = j.get("data").and_then(|v| v.as_array())
-                .or_else(|| j.get("models").and_then(|v| v.as_array()))?;
-            arr.first()?.get("id")?.as_str().map(|s| s.to_string())
-        });
+        let model = serde_json::from_str::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|j| {
+                let arr = j
+                    .get("data")
+                    .and_then(|v| v.as_array())
+                    .or_else(|| j.get("models").and_then(|v| v.as_array()))?;
+                arr.first()?.get("id")?.as_str().map(|s| s.to_string())
+            });
 
         match &model {
             Some(m) => {

@@ -74,5 +74,36 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Periodic home-screen widget refresh: read locally cached usage_history and rotate the displayed provider every 30 seconds. No network transfer, no user data leaves the device." />
         </service>
+
+        <!-- ===== 2x2 环图 widget（v0.1.52+）=====
+             180dp × 180dp，targetCell 2x2，不可调整大小。两种 layout：
+             widget_2x2_coding（Coding Plan 三环 5H/周/月）
+             widget_2x2_balance（余额型单大环）
+             运行期由 RingWidgetLayoutBuilder 按 provider 类型切换。
+             数据读取与 1x2 共用 WidgetDataReader（同进程同 SQLite）。 -->
+        <receiver
+            android:name=".widget.RingWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_label_ring">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_provider_info_2x2" />
+        </receiver>
+
+        <!-- 2x2 widget 轮播服务：与 1x2 carousel 平行存在，30 秒同节奏，
+             独立 SharedPreferences（ring_carousel_index）、独立通知渠道
+             （widget_ring_channel_*）。property 文本同样解释 widget 轮播
+             用途，未引入新的数据访问模式。 -->
+        <service
+            android:name=".widget.RingWidgetCarouselService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Periodic home-screen widget refresh for 2x2 ring widget: read locally cached usage_history and rotate the displayed provider every 30 seconds. No network transfer, no user data leaves the device." />
+        </service>
     </application>
 </manifest>

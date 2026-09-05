@@ -11,6 +11,11 @@
 
     <string name="widget_desc_one">One provider · balance at a glance</string>
 
+    <!-- v0.1.52+：2x2 环图 widget -->
+    <string name="widget_label_ring">AI Monitor · 2x2 Ring</string>
+
+    <string name="widget_desc_ring">Coding Plan 5H/Week/Month rings · or balance ring</string>
+
     <!-- Quota 行标签 -->
     <string name="widget_5h">5H</string>
     <string name="widget_week">Week</string>
@@ -38,11 +43,22 @@
     <!-- 小卡片副标签 -->
     <string name="widget_balance">Balance</string>
 
+    <!-- v0.1.52+：2x2 余额型专用 -->
+    <string name="widget_balance_used">Used %1$d%%</string>
+    <string name="widget_balance_row">Balance %1$s  │  Total %2$s</string>
+
     <!-- v0.1.51+: shown on line 2 instead of quota numbers when the snapshot
-         is older than STALE_THRESHOLD_SEC (15 min) -->
+         is older than STALE_THRESHOLD_SEC (15 min). Still used by 2x2 ring widget. -->
     <string name="widget_stale_minutes">Updated %1$d min ago</string>
     <string name="widget_stale_hours">Updated %1$d h ago</string>
     <string name="widget_stale_days">Updated %1$d d ago</string>
+
+    <!-- v0.1.56+: 1x2 widget row 3 (last update time). Shorter than
+         widget_stale_* — no "Updated" prefix, since row 3 already means time. -->
+    <string name="widget_just_now">Just now</string>
+    <string name="widget_updated_minutes">%1$d min ago</string>
+    <string name="widget_updated_hours">%1$d h ago</string>
+    <string name="widget_updated_days">%1$d d ago</string>
 
     <!-- 时间显示 -->
     <string name="widget_updated_at">Updated %1$s</string>
@@ -52,4 +68,10 @@
     <string name="widget_carousel_channel_desc">Keeps the 1x2 widget rotating through providers</string>
     <string name="widget_carousel_notif_title">AI Monitor</string>
     <string name="widget_carousel_notif_text">Widget is rotating providers every 30 s</string>
+
+    <!-- 2x2 环图轮播前台服务（v0.1.52+） -->
+    <string name="widget_ring_channel_name">2x2 ring refresh</string>
+    <string name="widget_ring_channel_desc">Keeps the 2x2 ring widget rotating through providers</string>
+    <string name="widget_ring_notif_title">AI Monitor · Ring</string>
+    <string name="widget_ring_notif_text">2x2 ring widget is rotating providers every 30 s</string>
 </resources>

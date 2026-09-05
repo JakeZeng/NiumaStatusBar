@@ -156,21 +156,21 @@ impl Database {
         let dir = data_dir.join("ai-model-monitor");
         Ok(dir.join("data.db"))
     }
-    
+
     pub fn load_providers(&self) -> Result<Vec<ProviderConfig>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT id, name, provider, base_url, api_key, query_endpoint, 
                     query_method, query_headers, query_params, refresh_interval, 
                     is_enabled, status
-             FROM providers"
+             FROM providers",
         )?;
-        
+
         let providers = stmt.query_map([], |row| {
             let headers_json: String = row.get(7)?;
             let params_json: String = row.get(8)?;
             let is_enabled_int: i32 = row.get(10)?;
-            
+
             Ok(ProviderConfig {
                 id: row.get(0)?,
                 name: row.get(1)?,
@@ -186,10 +186,10 @@ impl Database {
                 status: row.get(11)?,
             })
         })?;
-        
+
         providers.collect()
     }
-    
+
     pub fn save_provider(&self, provider: &ProviderConfig) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         let headers_json = serde_json::to_string(&provider.query_headers)
@@ -197,7 +197,7 @@ impl Database {
         let params_json = serde_json::to_string(&provider.query_params)
             .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
         let is_enabled_int = if provider.is_enabled { 1 } else { 0 };
-        
+
         conn.execute(
             "INSERT OR REPLACE INTO providers 
              (id, name, provider, base_url, api_key, query_endpoint, 
@@ -219,19 +219,22 @@ impl Database {
                 provider.status,
             ],
         )?;
-        
+
         Ok(())
     }
-    
+
     pub fn delete_provider(&self, id: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
-        conn.execute("DELETE FROM usage_history WHERE provider_id = ?1", params![id])?;
+        conn.execute(
+            "DELETE FROM usage_history WHERE provider_id = ?1",
+            params![id],
+        )?;
         conn.execute("DELETE FROM providers WHERE id = ?1", params![id])?;
         Ok(())
     }
-    
+
     // ===== 使用历史相关方法 =====
-    
+
     pub fn save_usage_history(&self, status: &UsageStatus) -> Result<()> {
         let mut status = status.clone();
         if status.balance.is_none() {
@@ -274,7 +277,7 @@ impl Database {
         )?;
         Ok(())
     }
-    
+
     pub fn get_usage_history(
         &self,
         provider_id: &str,
@@ -283,7 +286,7 @@ impl Database {
     ) -> Result<Vec<UsageStatus>> {
         let conn = self.conn.lock().unwrap();
         let since_ts = since.unwrap_or(0);
-        
+
         let mut stmt = conn.prepare(
             "SELECT provider_id, timestamp, balance, balance_used, balance_limit,
                     requests_today, error_rate, avg_latency, last_error,
@@ -321,10 +324,10 @@ impl Database {
                 ..Default::default()
             })
         })?;
-        
+
         rows.collect()
     }
-    
+
     pub fn cleanup_old_history(&self) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         let cutoff = chrono::Utc::now().timestamp() - 7 * 24 * 3600;
@@ -538,10 +541,7 @@ impl Database {
     pub fn cleanup_old_logs(&self, retain_days: i64) -> Result<usize> {
         let conn = self.conn.lock().unwrap();
         let cutoff = chrono::Utc::now().timestamp() - retain_days * 24 * 3600;
-        let n = conn.execute(
-            "DELETE FROM app_logs WHERE timestamp < ?1",
-            params![cutoff],
-        )?;
+        let n = conn.execute("DELETE FROM app_logs WHERE timestamp < ?1", params![cutoff])?;
         Ok(n)
     }
 }
@@ -550,13 +550,21 @@ impl Database {
 fn parse_log_level(s: &str, col_idx: usize) -> Result<crate::logging::LogLevel> {
     use std::str::FromStr;
     crate::logging::LogLevel::from_str(s).map_err(|e| {
-        rusqlite::Error::InvalidColumnType(col_idx, format!("LogLevel({})", e), rusqlite::types::Type::Text)
+        rusqlite::Error::InvalidColumnType(
+            col_idx,
+            format!("LogLevel({})", e),
+            rusqlite::types::Type::Text,
+        )
     })
 }
 
 fn parse_log_category(s: &str, col_idx: usize) -> Result<crate::logging::LogCategory> {
     use std::str::FromStr;
     crate::logging::LogCategory::from_str(s).map_err(|e| {
-        rusqlite::Error::InvalidColumnType(col_idx, format!("LogCategory({})", e), rusqlite::types::Type::Text)
+        rusqlite::Error::InvalidColumnType(
+            col_idx,
+            format!("LogCategory({})", e),
+            rusqlite::types::Type::Text,
+        )
     })
 }

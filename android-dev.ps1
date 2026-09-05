@@ -1,9 +1,9 @@
 # 用法：在 PowerShell 里 . .\android-dev.ps1 （注意前面的点和空格）
 # 或直接右键"用 PowerShell 运行"
 
-$env:NDK_HOME = "D:\android_repos\android\sdk\ndk\27.0.12077973"
-$env:ANDROID_HOME = "D:\android_repos\android\sdk"
-$env:JAVA_HOME = "D:\Program Files\Eclipse Adoptium\jdk-21.0.8.9-hotspot"
+$env:NDK_HOME = "D:\Android\SDK\ndk\27.0.12077973"
+$env:ANDROID_HOME = "D:\Android\SDK"
+$env:JAVA_HOME = "D:\java\OpenJDK21U-jdk_x64_windows_hotspot_21.0.3_9\jdk-21.0.3+9"
 
 $NDK_BIN = "$env:NDK_HOME\toolchains\llvm\prebuilt\windows-x86_64\bin"
 $env:PATH = "$env:JAVA_HOME\bin;$env:ANDROID_HOME\platform-tools;$NDK_BIN;$env:PATH"

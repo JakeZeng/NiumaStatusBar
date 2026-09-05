@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  2x2 widget · Coding Plan 三环布局（v0.1.52+）
+
+  物理 ~160dp × 160dp（targetCell 2x2，实际 140-180dp 因 launcher 而异）。
+
+  4 行 vertical LinearLayout：
+    第 1 行 24dp：状态点 + provider 名 + 页码（多 provider 时显示）
+    第 2-3 行 ~98dp：3 环并排，每环 ~40dp 直径 + 环下 12sp 百分比
+    第 4 行 14dp：3 段相对重置时间（"5H 0:23 后 │ 周 5d 后 │ 月 —"）
+
+  padding 12dp × 2，环之间间距由 layout_weight 控制。
+
+  v0.1.52 设计：环完全空心（stroke 模式），中心 "5H" "1W" "1M" 标签
+  由 RingWidgetLayoutBuilder 在代码里 setImageViewBitmap 绘制。
+  环下百分比是单独的 TextView（不画在 Bitmap 里），便于按阈值动态变色。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/widget_background"
+    android:paddingHorizontal="10dp"
+    android:paddingVertical="8dp">
+
+    <!-- 第 1 行：状态点 + 供应商名 + 页码 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <ImageView
+            android:id="@+id/widget_status_dot"
+            android:layout_width="8dp"
+            android:layout_height="8dp"
+            android:src="@drawable/widget_status_dot_pending"
+            android:contentDescription="@string/widget_status_pending" />
+
+        <TextView
+            android:id="@+id/widget_provider_name"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="6dp"
+            android:text="@string/widget_loading"
+            android:textColor="@color/widget_text_primary"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:singleLine="true"
+            android:ellipsize="end"
+            tools:text="Provider" />
+
+        <TextView
+            android:id="@+id/widget_page_index"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:textColor="@color/widget_text_muted"
+            android:textSize="10sp"
+            android:singleLine="true"
+            android:visibility="gone"
+            tools:text="1/3" />
+    </LinearLayout>
+
+    <!-- 第 2-3 行：3 环并排，每列 ImageView（环图）+ TextView（百分比） -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:layout_marginTop="6dp">
+
+        <!-- 5H 环 -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:paddingHorizontal="2dp">
+
+            <ImageView
+                android:id="@+id/widget_ring_5h"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:contentDescription="@string/widget_5h" />
+
+            <TextView
+                android:id="@+id/widget_pct_5h"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="—"
+                android:textColor="@color/widget_text_primary"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:singleLine="true"
+                tools:text="78%" />
+        </LinearLayout>
+
+        <!-- 1W 环 -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:paddingHorizontal="2dp">
+
+            <ImageView
+                android:id="@+id/widget_ring_1w"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:contentDescription="@string/widget_week" />
+
+            <TextView
+                android:id="@+id/widget_pct_1w"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="—"
+                android:textColor="@color/widget_text_primary"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:singleLine="true"
+                tools:text="40%" />
+        </LinearLayout>
+
+        <!-- 1M 环 -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:paddingHorizontal="2dp">
+
+            <ImageView
+                android:id="@+id/widget_ring_1m"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:contentDescription="@string/widget_month" />
+
+            <TextView
+                android:id="@+id/widget_pct_1m"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="—"
+                android:textColor="@color/widget_text_primary"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:singleLine="true"
+                tools:text="25%" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- 第 4 行：3 段相对重置时间 -->
+    <TextView
+        android:id="@+id/widget_reset_row"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="@string/widget_sub_loading"
+        android:textColor="@color/widget_text_secondary"
+        android:textSize="10sp"
+        android:singleLine="true"
+        android:ellipsize="end"
+        android:gravity="center"
+        tools:text="5H 0:23 后  │  周 5d 后  │  月 —" />
+
+    <!-- 隐藏字段（保留以复用 setTextViewText 调用） -->
+    <TextView
+        android:id="@+id/widget_updated_at"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:visibility="gone" />
+</LinearLayout>

@@ -23,6 +23,7 @@ export function ImportExport({ onProvidersUpdated }: Props) {
       a.download = `ai-model-monitor-config-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
+      await invoke<void>('open_download_folder');
       setMessage({ type: 'success', text: t('config.exportSuccess') });
     } catch (err) {
       setMessage({ type: 'error', text: t('config.exportError') + ': ' + err });

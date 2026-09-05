@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { CheckCircle, XCircle, RefreshCw, Trash2 } from 'lucide-react';
 import type { ProviderConfig } from '../api';
 import { getCurrencySymbol } from '../lib/currency';
-import { formatRelativeReset } from '../lib/format';
+import { formatRelativeReset, quotaBarColorClass } from '../lib/format';
 import { useStatusStore } from '../store/statusStore';
 
 interface Props {
@@ -46,6 +46,17 @@ const QuotaRow = memo(function QuotaRow({
           ? 0
           : 0;
 
+  // 配色按"剩余比例"切档：≥50% 绿，20-50% 黄，<20% 红。
+  // 注意 percent 在 hasTotalUsed 分支下是"已用%"，要先换算回"剩余%"。
+  const remainingPct = hasPercent
+    ? remainingPercent!
+    : hasTotalUsed
+      ? Math.max(0, 100 - (used! / total!) * 100)
+      : hasRemaining
+        ? Math.min(remaining!, 100)
+        : 100;
+  const barColor = quotaBarColorClass(remainingPct);
+
   const resetText = resetAt ? formatRelativeReset(resetAt) : '';
 
   return (
@@ -73,9 +84,7 @@ const QuotaRow = memo(function QuotaRow({
       <div className="relative h-1.5 bg-[var(--bg-secondary)] rounded-full overflow-hidden">
         {hasData && (
           <div
-            className="absolute inset-y-0 left-0 bg-gradient-to-r
-                       from-[var(--color-primary)] to-[var(--color-secondary)]
-                       rounded-full transition-all duration-500"
+            className={`absolute inset-y-0 left-0 rounded-full transition-all duration-500 ${barColor}`}
             style={{ width: `${Math.min(percent, 100)}%` }}
           />
         )}
@@ -131,6 +140,11 @@ function ProviderCardImpl({ provider, onDelete }: Props) {
   const usagePercent = status?.balance_limit && status.balance_used
     ? (status.balance_used / status.balance_limit) * 100
     : 0;
+  // 已用% 换算成剩余%，与配额条共用同一套阈值配色
+  const balanceRemainingPct = status?.balance_limit && status.balance_limit > 0
+    ? Math.max(0, 100 - usagePercent)
+    : 100;
+  const balanceBarColor = quotaBarColorClass(balanceRemainingPct);
 
   return (
     <div className={`provider-card relative overflow-hidden rounded-xl p-3 sm:p-4 lg:p-5
@@ -241,9 +255,7 @@ function ProviderCardImpl({ provider, onDelete }: Props) {
 
           <div className="relative h-2 bg-[var(--bg-secondary)] rounded-full overflow-hidden">
             <div
-              className="absolute inset-y-0 left-0 bg-gradient-to-r
-                         from-[var(--color-primary)] to-[var(--color-secondary)]
-                         rounded-full transition-all duration-500"
+              className={`absolute inset-y-0 left-0 rounded-full transition-all duration-500 ${balanceBarColor}`}
               style={{ width: `${Math.min(usagePercent, 100)}%` }}
             >
               {/* 余额条内部的 animate-pulse 移除 — 移动端持续动画拖累主线程合成 */}
@@ -252,22 +264,14 @@ function ProviderCardImpl({ provider, onDelete }: Props) {
         </div>
       )}
 
-      {/* 底部信息行 */}
-      <div className="grid grid-cols-2 gap-3 pt-3 border-t border-[var(--border-color)]/50">
+      {/* 底部信息行：只保留 latency。
+         之前的"总剩余（5h+周剩余求和，跨窗口无意义）"和"今日请求（与额度无关）"
+         已移除，避免给出误导性指标。 */}
+      <div className="pt-3 border-t border-[var(--border-color)]/50">
         <div className="bg-[var(--bg-secondary)]/50 rounded-lg p-2">
           <div className="text-xs text-[var(--text-muted)]">{t('provider.latency')}</div>
           <div className="text-sm font-semibold text-[var(--text-primary)]">
             {status?.avg_latency ? `${status.avg_latency}ms` : '--'}
-          </div>
-        </div>
-        <div className="bg-[var(--bg-secondary)]/50 rounded-lg p-2">
-          <div className="text-xs text-[var(--text-muted)]">
-            {isCodingPlan ? t('provider.quotaTotalRemaining') : t('provider.requestsToday')}
-          </div>
-          <div className="text-sm font-semibold text-[var(--text-primary)]">
-            {isCodingPlan
-              ? Math.floor((status?.quota_5h_remaining || 0) + (status?.quota_week_remaining || 0))
-              : (status?.requests_today ?? '--')}
           </div>
         </div>
       </div>

@@ -2,8 +2,12 @@
 <!--
   2x2 widget provider info（v0.1.52+）：
 
-  物理尺寸：minWidth=180dp / minHeight=180dp，
+  物理尺寸：minWidth=140dp / minHeight=140dp，
   targetCellWidth=2 / targetCellHeight=2，resizeMode="none"。
+
+  与 1x2 横条对齐：1x2 用 minWidth=140dp 占据 2 列，
+  2x2 同理用 140dp 占据 2×2 格。minWidth/minHeight 超过 2 格
+  阈值（约 150dp）时 launcher 会分配 3 格，因此必须压到 140dp。
 
   渲染形态：
   - Coding Plan provider：3 环并排（5H / 1W / 1M），中心标签 + 环下百分比 + 第 4 行重置
@@ -14,8 +18,8 @@
   立即覆盖）。
 -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
-    android:minWidth="180dp"
-    android:minHeight="180dp"
+    android:minWidth="140dp"
+    android:minHeight="140dp"
     android:targetCellWidth="2"
     android:targetCellHeight="2"
     android:widgetCategory="home_screen"

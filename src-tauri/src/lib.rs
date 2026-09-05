@@ -81,10 +81,13 @@ pub fn run() {
     builder
         .setup(move |app| {
             // 初始化数据库 - 使用 Tauri 的 path API 获取跨平台数据目录
-            let app_data_dir = app.path().app_data_dir()
+            let app_data_dir = app
+                .path()
+                .app_data_dir()
                 .expect("Failed to get app data directory");
-            let db = Arc::new(storage::Database::new(app_data_dir)
-                .expect("Failed to initialize database"));
+            let db = Arc::new(
+                storage::Database::new(app_data_dir).expect("Failed to initialize database"),
+            );
 
             // 初始化 Provider 管理器
             let manager = Arc::new(ProviderManager::new());
@@ -153,10 +156,8 @@ pub fn run() {
                 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
 
                 // 注册全局快捷键 Ctrl+Shift+M
-                let shortcut = Shortcut::new(
-                    Some(Modifiers::CONTROL | Modifiers::SHIFT),
-                    Code::KeyM,
-                );
+                let shortcut =
+                    Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyM);
                 app.handle()
                     .global_shortcut()
                     .register(shortcut)
@@ -187,6 +188,7 @@ pub fn run() {
             commands::widget_refresh_all,
             commands::get_provider_status,
             commands::get_usage_history,
+            commands::open_download_folder,
             commands::export_config,
             commands::import_config,
             commands::get_provider_catalog,

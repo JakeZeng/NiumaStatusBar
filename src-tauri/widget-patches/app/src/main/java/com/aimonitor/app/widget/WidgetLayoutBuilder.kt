@@ -15,24 +15,21 @@ import com.aimonitor.app.R
  * 所有 "setText / setImageViewResource / setViewVisibility / setOnClickPendingIntent"
  * 之外的操作一律不能使用。
  *
- * v0.1.38 起 layout 为 vertical 两行：
- *   第 1 行：状态点 + 供应商名（左）+ 主数值（中）+ 页码（右，多 provider 时显示）
- *   第 2 行：quota 补充信息
- *           - Coding Plan：5h 剩余 % │ 周剩余
- *           - 余额型：余额 + 已用百分比
+ * v0.1.56 起 layout 改为 vertical 三行：
+ *   第 1 行（~14dp）：状态点 + 供应商名 + 页码
+ *   第 2 行（weight=1，14sp bold，center）：主信息
+ *              - Coding Plan（minimax_* / volcengine_*）："5H 78%  │  Week 12.5"
+ *              - 余额型（deepseek 等）："¥128.50"
+ *   第 3 行（~10dp，8sp muted，右对齐）：相对更新时间（"刚刚" / "X 分钟前" / ...）
+ *
+ * v0.1.56 起去掉 widget_sub_label 和 row-2 陈旧降级文案（"更新于 N 分钟前"）。
+ * 理由：陈旧状态现在由第 3 行的相对时间天然表达，row 2 继续展示主数值更直观；
+ * status_dot 仍按 v0.1.51 逻辑着色（红=error / 灰=stale / 绿=正常）。
  *
  * v0.1.39 起支持轮播：[build] 增加 [index] 参数，由前台 service 按固定间隔递增，
  * 实现「在 1x2 横条上自动切换显示不同 provider」。单 provider 时不显示页码。
  */
 object WidgetLayoutBuilder {
-
-  /**
-   * 数据陈旧阈值（秒）。距快照写入超过这么久，第 2 行就改显示
-   * 「更新于 N 分钟前」而不是 quota 数字，避免把冻结值当成实时值。
-   * 直接复用 [UsageWidgetCarouselService.STALE_THRESHOLD_SEC]，保证
-   * 「判定时机」和「展示阈值」不会各自漂移。
-   */
-  private const val STALE_AFTER_SEC = UsageWidgetCarouselService.STALE_THRESHOLD_SEC
 
   /** 主入口：填充数据并返回 RemoteViews。themeId 见 [WidgetTheme]。
    *
@@ -64,15 +61,12 @@ object WidgetLayoutBuilder {
   }
 
   /**
-   * 1x2 渲染逻辑：
-   * - 第 1 行：状态点 + provider 名 + 主数值（balance / Coding Plan 最小周期 %）
-   * - 第 2 行：quota 补充（multi-period summary），数据陈旧时改显示「更新于 N 分钟前」
-   * - 页码：仅当 total > 1 时显示 "(index+1)/total"，单 provider 时隐藏省空间
+   * 1x2 渲染逻辑（v0.1.56 三行版）：
+   * - Row 1：状态点 + provider 名 + 页码
+   * - Row 2：主信息（Coding Plan 显示 5h%+周用量，余额型显示余额），14sp bold
+   * - Row 3：相对更新时间，"刚刚" / "X 分钟前" / ...
    *
-   * v0.1.51 起：数据超过 [STALE_AFTER_SEC] 时，第 2 行不再显示 quota 数字。
-   * 理由：widget 只是 SQLite 的只读渲染器，App 进程不在时数据会冻结；
-   * 此时继续显示 "5H 78%" 会让人误以为是实时值。与其假装实时，
-   * 不如把陈旧显式化（状态点同时降为 pending 灰点）。
+   * v0.1.56 起 row 2 不再做陈旧降级（"更新于 N 分钟前"），陈旧状态由 row 3 + status_dot 共同承担。
    */
   private fun renderOne(
     context: Context,
@@ -83,11 +77,8 @@ object WidgetLayoutBuilder {
   ) {
     val stale = isStale(top)
     rv.setTextViewText(R.id.widget_provider_name, top.providerName)
-    rv.setTextViewText(R.id.widget_big_number, formatBigNumber(top))
-    rv.setTextViewText(
-      R.id.widget_sub_label,
-      if (stale) staleLabel(context, top) else subLabelFor(context, top),
-    )
+    rv.setTextViewText(R.id.widget_big_number, formatMainRow(top))
+    rv.setTextViewText(R.id.widget_updated_at, updatedAtLabel(context, top))
     rv.setImageViewResource(R.id.widget_status_dot, staleDot(top, stale))
     rv.setOnClickPendingIntent(R.id.widget_root, openAppIntent(context, top.providerId))
 
@@ -99,32 +90,40 @@ object WidgetLayoutBuilder {
     }
   }
 
+  /** 数据陈旧阈值（秒）。距快照写入超过这么久，状态点降为 pending 灰。
+   * 直接复用 [UsageWidgetCarouselService.STALE_THRESHOLD_SEC]，保证
+   * 「判定时机」和「展示阈值」不会各自漂移。
+   *
+   * 注意必须是 `val` 而非 `const val`：Kotlin 限制 const val 必须是
+   * 编译期字面量，跨 object 引用其他 const val 会被编译器拒绝
+   * （"Const val initializer should be a constant value"）。
+   * 运行时再 resolve 一次无开销。
+   */
+  private val STALE_AFTER_SEC = UsageWidgetCarouselService.STALE_THRESHOLD_SEC
+
   /** 快照是否陈旧（超过 [STALE_AFTER_SEC] 没有新数据写入）。 */
   private fun isStale(s: UsageSnapshot): Boolean =
     (System.currentTimeMillis() / 1000 - s.timestamp) > STALE_AFTER_SEC
 
-  /** 陈旧时的第 2 行文案：「更新于 N 分钟 / 小时 / 天前」。 */
-  private fun staleLabel(context: Context, s: UsageSnapshot): String {
-    val minutes = ((System.currentTimeMillis() / 1000 - s.timestamp) / 60).coerceAtLeast(0L)
-    return when {
-      minutes < 60 -> context.getString(R.string.widget_stale_minutes, minutes)
-      minutes < 60 * 24 -> context.getString(R.string.widget_stale_hours, minutes / 60)
-      else -> context.getString(R.string.widget_stale_days, minutes / (60 * 24))
-    }
-  }
-
   /**
-   * 主数值：
-   * - Coding Plan：显示 "78%"（最小周期百分比）
-   * - 余额型：显示 "¥128.50"
+   * 第 2 行主信息（v0.1.56 起合并旧 big_number + sub_label 两行内容）：
+   * - Coding Plan："5H 78%  │  Week 12.5"（5h 剩余百分比 + 周剩余绝对值）
+   * - 余额型："¥128.50"
+   * 任意一方缺失则降级（缺 5h% → 只显示周剩余；缺周剩余 → 只显示 5h%；都缺 → "—"）。
    */
-  private fun formatBigNumber(s: UsageSnapshot): String {
+  private fun formatMainRow(s: UsageSnapshot): String {
     return if (s.isCodingPlan) {
-      val period = s.smallestPeriod()
-      if (period != null && period.isPercent) {
-        "${period.value.toInt()}%"
-      } else {
-        period?.let { "${formatBalance(it.value)}" } ?: "—"
+      val parts = mutableListOf<String>()
+      s.quota5hRemainingPercent?.let { p ->
+        parts += "5H ${p.toInt()}%"
+      }
+      s.quotaWeekRemaining?.let { v ->
+        parts += "Week ${formatBalance(v)}"
+      }
+      when {
+        parts.isEmpty() -> "—"
+        parts.size == 1 -> parts[0]
+        else -> parts.joinToString("  │  ")
       }
     } else {
       val v = s.balance ?: s.balanceLimit ?: return "—"
@@ -133,38 +132,24 @@ object WidgetLayoutBuilder {
   }
 
   /**
-   * 第 2 行 quota 补充信息：
-   * - Coding Plan：拼接 "5H X% │ 周 X"（取 5h 百分比和周剩余数）
-   * - 余额型：拼接 "余额 ¥128.50 │ 已用 35%"
-   * - 任意一方缺失则省略
+   * 第 3 行相对更新时间文案：
+   * - < 1 分钟："刚刚"
+   * - < 1 小时："X 分钟前"
+   * - < 1 天  ："X 小时前"
+   * - 否则     ："X 天前"
+   *
+   * v0.1.56 新增。区别于 [UsageWidgetCarouselService.staleLabel]：本函数始终显示时间，
+   * 没有"更新于"前缀（row 3 本身即表示时间），且分桶粒度更细（含"刚刚"和"天"两档）。
    */
-  private fun subLabelFor(context: Context, s: UsageSnapshot): String {
-    if (s.isCodingPlan) {
-      val parts = mutableListOf<String>()
-      // 5h 剩余百分比
-      s.quota5hRemainingPercent?.let { p ->
-        parts += "5H ${p.toInt()}%"
-      }
-      // 周剩余（绝对值）
-      s.quotaWeekRemaining?.let { v ->
-        parts += "${context.getString(R.string.widget_week)} ${formatBalance(v)}"
-      }
-      return parts.joinToString("  │  ")
+  private fun updatedAtLabel(context: Context, s: UsageSnapshot): String {
+    val seconds = (System.currentTimeMillis() / 1000 - s.timestamp).coerceAtLeast(0L)
+    val minutes = seconds / 60
+    return when {
+      seconds < 60 -> context.getString(R.string.widget_just_now)
+      minutes < 60 -> context.getString(R.string.widget_updated_minutes, minutes.toInt())
+      minutes < 60 * 24 -> context.getString(R.string.widget_updated_hours, (minutes / 60).toInt())
+      else -> context.getString(R.string.widget_updated_days, (minutes / (60 * 24)).toInt())
     }
-    // 余额型
-    val parts = mutableListOf<String>()
-    s.balance?.let { v ->
-      parts += "${context.getString(R.string.widget_balance)} ${s.currencySymbol()}${formatBalance(v)}"
-    }
-    s.balanceLimit?.let { limit ->
-      s.balanceUsed?.let { used ->
-        if (limit > 0) {
-          val pct = (used / limit * 100).toInt()
-          parts += "已用 $pct%"
-        }
-      }
-    }
-    return parts.joinToString("  │  ")
   }
 
   private fun renderEmpty(
@@ -182,14 +167,9 @@ object WidgetLayoutBuilder {
       true -> R.string.widget_syncing
       null -> R.string.widget_no_provider
     }
-    val subRes = when (hasAnyProvider) {
-      false -> R.string.widget_no_provider_hint
-      true -> R.string.widget_sub_loading
-      null -> R.string.widget_sub_loading
-    }
     rv.setTextViewText(R.id.widget_provider_name, context.getString(nameRes))
     rv.setTextViewText(R.id.widget_big_number, "—")
-    rv.setTextViewText(R.id.widget_sub_label, context.getString(subRes))
+    rv.setTextViewText(R.id.widget_updated_at, context.getString(R.string.widget_sub_loading))
     rv.setImageViewResource(R.id.widget_status_dot, R.drawable.widget_status_dot_pending)
   }
 

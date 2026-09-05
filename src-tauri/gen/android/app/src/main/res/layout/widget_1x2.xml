@@ -2,20 +2,21 @@
 <!--
   1x2 widget（1 行高 × 2 列宽，水平条形状，约 160dp × 40dp）：
 
-  内部 vertical 两行：
-    第 1 行：状态点 + 供应商名（左侧）+ 主数值（中，余额或 Coding Plan 周期 %）+ 页码（右，多 provider 时显示）
-    第 2 行：quota 补充信息
-              - Coding Plan：5h 剩余 % / 周剩余 / 月剩余（取前 2 项，用 │ 分隔）
-              - 余额型：余额 + 使用百分比
+  v0.1.56 起改为 vertical 三行：
+    第 1 行（~14dp）：状态点 + 供应商名（左）+ 页码（右，多 provider 时显示）
+    第 2 行（weight=1，占满中间，~16dp）：主信息，14sp bold，gravity center
+              - Coding Plan（minimax_* / volcengine_*）："5H 78%  │  Week 12.5"
+              - 余额型（deepseek 等）："¥128.50"
+              - 数据陈旧时改显示「更新于 N 分钟前」（沿用 v0.1.51 陈旧降级文案）
+    第 3 行（~10dp）：相对更新时间（"刚刚" / "X 分钟前" / "X 小时前" / "X 天前"），
+                       右对齐，8sp muted
 
-  整个 widget 横铺 launcher 一行，节省垂直空间。
+  paddingVertical 由 4dp 调到 2dp 给第 3 行让出空间。
+  Row 1 textSize 由 12sp 调到 11sp 让出 1dp 高度。
+  Row 2 复用既有 widget_big_number id，Builder 直接 setTextViewText。
 
-  v0.1.39 起：横条本身轮播所有 enabled provider，每 30 秒切换一次。
+  v0.1.39 起横条本身轮播所有 enabled provider，每 30 秒切换一次。
   单 provider 时 widget_page_index 默认 gone，不显示。
-
-  v0.1.40 起：minWidth 从 180dp 调到 160dp，paddingHorizontal 从 10dp
-  调到 8dp。原因：180dp / 80dp/格 ≈ 2.25，老 launcher / 第三方 launcher
-  ceil 到 3 cells 显示为 1x3；160dp / 80dp/格 = 2 cells 稳定。
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
@@ -25,9 +26,9 @@
     android:orientation="vertical"
     android:background="@drawable/widget_background"
     android:paddingHorizontal="8dp"
-    android:paddingVertical="4dp">
+    android:paddingVertical="2dp">
 
-    <!-- 第 1 行：状态点 + 供应商名 + 主数值 + 页码 -->
+    <!-- 第 1 行：状态点 + 供应商名 + 页码 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -49,23 +50,11 @@
             android:layout_marginStart="6dp"
             android:text="@string/widget_loading"
             android:textColor="@color/widget_text_primary"
-            android:textSize="12sp"
+            android:textSize="11sp"
             android:textStyle="bold"
             android:singleLine="true"
             android:ellipsize="end"
             tools:text="Provider" />
-
-        <TextView
-            android:id="@+id/widget_big_number"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="6dp"
-            android:text="—"
-            android:textColor="@color/widget_text_primary"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:singleLine="true"
-            tools:text="¥128.50" />
 
         <!-- 轮播页码：多 provider 时显示 (1/3)，单 provider 时隐藏，省空间 -->
         <TextView
@@ -74,29 +63,36 @@
             android:layout_height="wrap_content"
             android:layout_marginStart="4dp"
             android:textColor="@color/widget_text_muted"
-            android:textSize="10sp"
+            android:textSize="9sp"
             android:singleLine="true"
             android:visibility="gone"
             tools:text="1/3" />
     </LinearLayout>
 
-    <!-- 第 2 行：quota 补充信息（Coding Plan 显示 5h% + 周%，余额型显示余额 + 使用%） -->
+    <!-- 第 2 行：主信息（Coding Plan 显示 5H% + 周用量，余额型显示余额），
+         weight=1 占满中间，14sp bold，比第 1/3 行字号大 -->
     <TextView
-        android:id="@+id/widget_sub_label"
+        android:id="@+id/widget_big_number"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="1dp"
-        android:text="@string/widget_sub_loading"
-        android:textColor="@color/widget_text_secondary"
-        android:textSize="10sp"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:text="—"
+        android:textColor="@color/widget_text_primary"
+        android:textSize="14sp"
+        android:textStyle="bold"
         android:singleLine="true"
         android:ellipsize="end"
-        tools:text="5H 78%  │  周 12.5" />
+        tools:text="5H 78%  │  Week 12.5" />
 
-    <!-- 隐藏字段（保留以复用 setTextViewText 调用） -->
+    <!-- 第 3 行：相对更新时间（小字，右对齐） -->
     <TextView
         android:id="@+id/widget_updated_at"
-        android:layout_width="0dp"
-        android:layout_height="0dp"
-        android:visibility="gone" />
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="end"
+        android:textColor="@color/widget_text_muted"
+        android:textSize="8sp"
+        android:singleLine="true"
+        tools:text="5 分钟前" />
 </LinearLayout>

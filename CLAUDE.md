@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 工作流规则
+
+收到任何需求或任务时，**第一步**必须先到项目根目录下的 `docs/` 查阅可用信息（`docs/android-build.md`、`docs/desktop-release.md` 等），把与当前任务相关的文档内容纳入考量，然后再开始分析代码或动手实现。
+
 ## Commands
 
 包管理器固定使用 **pnpm**（仓库提供 `pnpm-lock.yaml`，`package-lock.json` 仅为遗留产物）。

@@ -95,5 +95,22 @@
       "clear": "Confirm clear",
       "clearMessage": "Clear all logs? This operation cannot be undone."
     }
+  },
+  "settings": {
+    "gear": "Settings",
+    "title": "Settings",
+    "close": "Close",
+    "about": "About",
+    "appName": "App Name",
+    "version": "Version",
+    "hosting": "Background",
+    "closeAction": "Close Button Behavior",
+    "closeMinimize": "Minimize to Tray",
+    "closeExit": "Exit",
+    "closeAsk": "Ask Every Time",
+    "trayVisible": "Show Tray Icon",
+    "trayVisibleHint": "Keep the tray icon after closing the window",
+    "autostart": "Start with Windows",
+    "autostartHint": "Launch the app automatically after signing in to Windows"
   }
 }

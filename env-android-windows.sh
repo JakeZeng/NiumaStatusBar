@@ -2,8 +2,8 @@
 # Windows 下的 Android 开发环境（Git Bash 用 . 或 source 加载）
 # 对应 Linux 的 env-android.sh
 
-export JAVA_HOME="D:/Program Files/Eclipse Adoptium/jdk-21.0.8.9-hotspot"
-export ANDROID_HOME="D:/android_repos/android/sdk"
+export JAVA_HOME="D:/java/OpenJDK21U-jdk_x64_windows_hotspot_21.0.3_9/jdk-21.0.3+9"
+export ANDROID_HOME="D:/Android/SDK"
 export ANDROID_SDK_ROOT="$ANDROID_HOME"
 export NDK_HOME="$ANDROID_HOME/ndk/27.0.12077973"
 

@@ -1,10 +1,12 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import { readFileSync } from "node:fs";
 
-const pkgVersion = JSON.parse(
-  readFileSync(new URL("./package.json", import.meta.url), "utf-8"),
-).version as string;
+// 版本号来源：pnpm/npm 跑 `pnpm build` 时会自动注入 npm_package_version。
+// 不要改成 readFileSync('./package.json')：Vite 6.4.x + esbuild 0.25 在
+// Windows / CRLF 场景会把 package.json 内容内联到临时 .mjs 时错误地加
+// BOM（U+FEFF），触发 JSON.parse 在 line 6 col 23 抛 SyntaxError。
+// 见 desktop-release skill 的故障排查章节。
+const pkgVersion = process.env.npm_package_version ?? "0.0.0";
 
 export default defineConfig({
   plugins: [react()],

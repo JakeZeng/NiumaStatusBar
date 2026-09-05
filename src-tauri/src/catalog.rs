@@ -3,19 +3,19 @@ use serde::{Deserialize, Serialize};
 /// 供应商预置目录（不包含 API Key，由用户自行配置）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderPreset {
-    pub id: String,                      // 预置 ID
-    pub name: String,                    // 显示名
-    pub provider_type: String,           // 类型：openai/anthropic/...
-    pub base_url: String,                // API 根地址
-    pub query_endpoint: String,          // 查询接口
-    pub query_method: String,            // GET / POST
+    pub id: String,             // 预置 ID
+    pub name: String,           // 显示名
+    pub provider_type: String,  // 类型：openai/anthropic/...
+    pub base_url: String,       // API 根地址
+    pub query_endpoint: String, // 查询接口
+    pub query_method: String,   // GET / POST
     pub default_headers: std::collections::HashMap<String, String>,
-    pub default_refresh_interval: u64,   // 推荐刷新间隔
-    pub category: String,                // 分类：domestic / overseas / coding_plan
-    pub description: String,             // 简介
-    pub docs_url: String,                // 官方文档
-    pub requires_body: bool,             // 是否需要请求体（火山方舟需要）
-    pub default_model: Option<String>,   // 默认模型（火山方舟用）
+    pub default_refresh_interval: u64, // 推荐刷新间隔
+    pub category: String,              // 分类：domestic / overseas / coding_plan
+    pub description: String,           // 简介
+    pub docs_url: String,              // 官方文档
+    pub requires_body: bool,           // 是否需要请求体（火山方舟需要）
+    pub default_model: Option<String>, // 默认模型（火山方舟用）
 }
 
 /// 完整预置目录（参考 ccSwitch 的设计：50+ 厂商可扩展）
@@ -41,7 +41,6 @@ pub fn get_catalog() -> Vec<ProviderPreset> {
             requires_body: false,
             default_model: None,
         },
-
         // ===== 海外 Coding Plan =====
         ProviderPreset {
             id: "minimax_coding_overseas".into(),
@@ -58,7 +57,6 @@ pub fn get_catalog() -> Vec<ProviderPreset> {
             requires_body: false,
             default_model: None,
         },
-
         // ===== 通用 API（按量计费）=====
         ProviderPreset {
             id: "deepseek".into(),

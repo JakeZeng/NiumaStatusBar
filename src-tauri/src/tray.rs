@@ -94,7 +94,11 @@ pub fn apply_tray_visibility<R: Runtime>(app: &AppHandle<R>, visible: bool) {
     }
 }
 
-fn spawn_tooltip_rotator<R: Runtime>(app: AppHandle<R>, manager: Arc<ProviderManager>, logger: Arc<AppLogger>) {
+fn spawn_tooltip_rotator<R: Runtime>(
+    app: AppHandle<R>,
+    manager: Arc<ProviderManager>,
+    logger: Arc<AppLogger>,
+) {
     tauri::async_runtime::spawn(async move {
         let mut idx: usize = 0;
         let mut ticker = tokio::time::interval(Duration::from_secs(ROTATE_INTERVAL_SECS));

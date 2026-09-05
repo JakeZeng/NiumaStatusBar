@@ -2,12 +2,13 @@
 <!--
   2x2 widget · Coding Plan 三环布局（v0.1.52+）
 
-  物理 ~160dp × 160dp（targetCell 2x2，实际 140-180dp 因 launcher 而异）。
+  物理 ~140dp × 140dp（targetCell 2x2，与 1x2 横条 minWidth 对齐）。
 
-  4 行 vertical LinearLayout：
-    第 1 行 24dp：状态点 + provider 名 + 页码（多 provider 时显示）
-    第 2-3 行 ~98dp：3 环并排，每环 ~40dp 直径 + 环下 12sp 百分比
-    第 4 行 14dp：3 段相对重置时间（"5H 0:23 后 │ 周 5d 后 │ 月 —"）
+   4 行 vertical LinearLayout：
+     第 1 行 24dp：状态点 + provider 名 + 页码
+     第 2-3 行 ~98dp：2 或 3 环并排（5H / 1W / [1M]），
+       1M 环在无月剩余数据时隐藏
+     第 4 行 14dp：2 或 3 段相对重置时间
 
   padding 12dp × 2，环之间间距由 layout_weight 控制。
 
@@ -132,6 +133,7 @@
 
         <!-- 1M 环 -->
         <LinearLayout
+            android:id="@+id/widget_col_1m"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"

@@ -3,4 +3,6 @@
 /src/main/assets/tauri.conf.json
 /tauri.build.gradle.kts
 /proguard-tauri.pro
-/tauri.properties
+/tauri.properties# local-only release signing
+keystore.properties
+*.keystore

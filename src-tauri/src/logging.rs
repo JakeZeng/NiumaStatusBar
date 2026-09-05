@@ -380,7 +380,9 @@ fn redact_value(value: &mut serde_json::Value) {
 }
 
 fn is_sensitive_key(k: &str) -> bool {
-    REDACT_KEYS.iter().any(|redact| redact.eq_ignore_ascii_case(k))
+    REDACT_KEYS
+        .iter()
+        .any(|redact| redact.eq_ignore_ascii_case(k))
 }
 
 // ============================================================================

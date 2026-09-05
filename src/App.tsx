@@ -15,7 +15,8 @@ import { MobileMenu } from './components/MobileMenu';
 import { CloseConfirmDialog } from './components/CloseConfirmDialog';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { LogViewer } from './components/LogViewer';
-import { Library, ScrollText } from 'lucide-react';
+import { SettingsModal } from './components/SettingsModal';
+import { Library, ScrollText, Settings } from 'lucide-react';
 import { api, type ProviderConfig } from './api';
 import { useStatusStore } from './store/statusStore';
 
@@ -27,6 +28,7 @@ export default function App() {
   const [modalOpen, setModalOpen] = useState(false);
   const [hubOpen, setHubOpen] = useState(false);
   const [logViewerOpen, setLogViewerOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [deletingTarget, setDeletingTarget] = useState<ProviderConfig | null>(null);
@@ -164,6 +166,8 @@ export default function App() {
   const closeHub = useCallback(() => setHubOpen(false), []);
   const openLogs = useCallback(() => setLogViewerOpen(true), []);
   const closeLogs = useCallback(() => setLogViewerOpen(false), []);
+  const openSettings = useCallback(() => setSettingsOpen(true), []);
+  const closeSettings = useCallback(() => setSettingsOpen(false), []);
 
   const openAddCustom = useCallback(() => {
     setEditing(null);
@@ -230,6 +234,18 @@ export default function App() {
               <ScrollText className="w-4 h-4" />
               <span>{t('logs.title', '日志')}</span>
             </button>
+            <button
+              onClick={openSettings}
+              className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-lg
+                       bg-[var(--bg-card)] border border-[var(--border-color)]
+                       text-[var(--text-primary)]
+                       hover:border-[var(--color-primary)] hover:shadow-[var(--glow-primary)]
+                       transition-all text-sm"
+              title={t('settings.gear', '设置')}
+            >
+              <Settings className="w-4 h-4" />
+              <span>{t('settings.gear', '设置')}</span>
+            </button>
             <div className="hidden md:block">
               <LanguageSwitcher />
             </div>
@@ -240,6 +256,7 @@ export default function App() {
             <MobileMenu
               onOpenHub={openHub}
               onOpenLogs={openLogs}
+              onOpenSettings={openSettings}
               onImportExport={() => { /* 由 hub 间接管理 */ }}
             />
           </div>
@@ -256,7 +273,7 @@ export default function App() {
                 onClick={() => setSelectedProvider(provider.id)}
                 className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap flex-shrink-0
                   ${selectedProvider === provider.id
-                    ? 'bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-secondary)] text-white shadow-[var(--glow-primary)]'
+                    ? 'bg-[var(--tab-selected-bg)] text-[var(--tab-selected-text)] border border-[var(--tab-selected-border)] shadow-[var(--tab-selected-shadow)]'
                     : 'bg-[var(--bg-card)] text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-[var(--color-primary)]'
                   }`}
               >
@@ -325,6 +342,11 @@ export default function App() {
       <LogViewer
         open={logViewerOpen}
         onClose={closeLogs}
+      />
+
+      <SettingsModal
+        open={settingsOpen}
+        onDismiss={closeSettings}
       />
 
       <CloseConfirmDialog

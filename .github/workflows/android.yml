@@ -879,8 +879,8 @@ jobs:
 
           echo "--- widget sources (all from widget-patches/ + init + git restore) ---"
           find "$ROOT/app/src/main/java/com/aimonitor/app" -type f | sort
-          echo "manifest receiver count: $(grep -c 'UsageWidgetProvider' "$ROOT/app/src/main/AndroidManifest.xml")"
-          echo "(should be 1 — only UsageWidgetProvider since v0.1.37)"
+          echo "manifest receiver count: $(grep -cE 'UsageWidgetProvider|RingWidgetProvider' "$ROOT/app/src/main/AndroidManifest.xml")"
+          echo "(should be 2 after v0.1.52: UsageWidgetProvider + RingWidgetProvider)"
 
       - name: Make gradlew executable
         run: |
@@ -990,12 +990,12 @@ jobs:
           echo "--- widget Kotlin classes packaged in APK ---"
           unzip -l "$APK" | grep -i "widget" || true
           echo "-----------------------------------------------"
-          for cls in UsageWidgetProvider; do
+          for cls in UsageWidgetProvider RingWidgetProvider; do
             if grep -Fq "$cls" /tmp/apk-manifest.txt; then
               echo "OK: $cls present"
             else
               echo "FATAL: $cls missing from APK manifest — widget restore step is incomplete" >&2
-              echo "(check the 'Restore home-screen widget' step log above for 'manifest receiver count:' — should be 1 after v0.1.37)" >&2
+              echo "(check the 'Restore home-screen widget' step log above for 'manifest receiver count:' — should be 2 after v0.1.52: UsageWidgetProvider + RingWidgetProvider)" >&2
               exit 1
             fi
           done

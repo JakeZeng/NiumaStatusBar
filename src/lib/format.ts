@@ -19,3 +19,17 @@ export function formatRelativeReset(resetAtUnixSec: number | null | undefined): 
   }
   return `${minutes}m 后重置`;
 }
+
+/**
+ * 配额/余额进度条按剩余比例切档配色。
+ * 阈值：剩余 ≥50% success 绿，20-50% warning 黄，<20% danger 红。
+ * 三个主题的 --color-success/--color-warning/--color-danger 都已定义，
+ * 切换主题时颜色自动跟随（cyberpunk 荧光、wuxia 水墨、guoman 糖果）。
+ *
+ * @param remainingPct 剩余比例 0-100（>100 也按绿处理）
+ */
+export function quotaBarColorClass(remainingPct: number): string {
+  if (remainingPct >= 50) return 'bg-[var(--color-success)]';
+  if (remainingPct >= 20) return 'bg-[var(--color-warning)]';
+  return 'bg-[var(--color-danger)]';
+}

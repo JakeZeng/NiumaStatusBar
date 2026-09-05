@@ -28,6 +28,7 @@ chrono = "0.4"
 uuid = { version = "1", features = ["v4"] }
 rusqlite = { version = "0.31", features = ["bundled"] }
 thiserror = "1.0"
+dirs = "5"
 
 [features]
 default = ["custom-protocol"]

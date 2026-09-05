@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { MoreVertical, Globe, Palette, Download, X, Library, ScrollText } from 'lucide-react';
+import { MoreVertical, Globe, Palette, Download, X, Library, ScrollText, Settings } from 'lucide-react';
 import { themeManager, THEMES, type ThemeId } from '../themes/ThemeManager';
 import { ImportExport } from './ImportExport';
 
@@ -8,6 +8,7 @@ interface Props {
   onOpenHub?: () => void;
   onImportExport?: () => void;
   onOpenLogs?: () => void;
+  onOpenSettings?: () => void;
 }
 
 /**
@@ -15,8 +16,8 @@ interface Props {
  * 收纳：供应商中心、自定义、导入导出、日志、语言、主题
  * 仅在 < sm 屏幕下显示
  */
-export function MobileMenu({ onOpenHub, onImportExport, onOpenLogs }: Props) {
-  const { i18n } = useTranslation();
+export function MobileMenu({ onOpenHub, onImportExport, onOpenLogs, onOpenSettings }: Props) {
+  const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(false);
   const [subPage, setSubPage] = useState<'main' | 'theme' | 'language' | 'io'>('main');
   const [currentTheme, setCurrentTheme] = useState<ThemeId>(themeManager.getCurrent());
@@ -58,6 +59,11 @@ export function MobileMenu({ onOpenHub, onImportExport, onOpenLogs }: Props) {
 
   const handleLogs = () => {
     onOpenLogs?.();
+    close();
+  };
+
+  const handleSettings = () => {
+    onOpenSettings?.();
     close();
   };
 
@@ -104,6 +110,16 @@ export function MobileMenu({ onOpenHub, onImportExport, onOpenLogs }: Props) {
               >
                 <ScrollText className="w-4 h-4 text-[var(--color-primary)]" />
                 <span className="text-sm flex-1">日志</span>
+              </button>
+              <button
+                onClick={handleSettings}
+                className="w-full flex items-center gap-3 px-4 py-3
+                         hover:bg-[var(--bg-overlay)] active:bg-[var(--bg-overlay)]
+                         transition-colors text-left
+                         text-[var(--text-primary)]"
+              >
+                <Settings className="w-4 h-4 text-[var(--color-primary)]" />
+                <span className="text-sm flex-1">{t('settings.gear', '设置')}</span>
               </button>
               <div className="my-1 border-t border-[var(--border-color)]/50" />
               <button

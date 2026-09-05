@@ -122,6 +122,7 @@ export const api = {
   getUsageHistory: (providerId: string, limit = 50, since?: number) => 
     invoke<UsageStatus[]>('get_usage_history', { providerId, limit, since }),
   exportConfig: () => invoke<string>('export_config'),
+  openDownloadFolder: () => invoke<void>('open_download_folder'),
   importConfig: (json: string) => invoke<ProviderConfig[]>('import_config', { json }),
   
   // ccSwitch 风格

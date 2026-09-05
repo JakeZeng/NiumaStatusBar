@@ -1,0 +1,2 @@
+﻿a906c3cb55cda991a26ed72900f798bf55bcf226581e01c2b78146ce698df13f  NiumaStatusBar_0.1.56_x64_en-US.msi
+a73fc7a32313563d53db54f202c5cc59748fb2427fa65cb359f6f8f2abc2decc  NiumaStatusBar_0.1.56_x64_zh-CN.msi

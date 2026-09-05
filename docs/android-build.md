@@ -181,3 +181,240 @@ Release 构建会启用 R8/ProGuard 优化（`isMinifyEnabled = true`），并�
 - `src-tauri/src/main.rs` — 简化为 `ai_model_monitor_lib::run()`
 - `src-tauri/gen/android/app/src/main/AndroidManifest.xml` — 添加通知/网络权限
 - `src-tauri/gen/android/gradle/wrapper/gradle-wrapper.properties` — 由 `fix-android-wrapper.sh` 自动修复
+- `src-tauri/gen/android/buildSrc/src/main/java/com/aimonitor/app/kotlin/RustPlugin.kt` + `BuildTask.kt` — 自研 Gradle 插件：`rustBuild<Arch><Profile>` 任务跳过 tauri-cli 直接 cargo build（绕开 Windows symlink）；改完必须 `--stop` + `--rerun-tasks`
+- `src-tauri/gen/android/gradle.properties` — `abiList` / `archList` / `targetList` 控制三个 ABI
+- `src-tauri/tauri.conf.json` + `package.json` — **保持 UTF-8 无 BOM**，否则 tauri-build / Vite 双双解析失败（见 §10.10）
+
+---
+
+## 10. Windows 真机调试实战（PowerShell 5.1）
+
+> 适用于：本地 Windows 11 + Android 真机 / 模拟器（如 MuMu）。与第 2-5 节的 Linux 容器 CI 流程不同。
+
+### 10.1 路径约定
+
+| 组件 | 实际路径 |
+|------|----------|
+| JDK 21 | `D:\java\OpenJDK21U-jdk_x64_windows_hotspot_21.0.3_9` |
+| Android SDK | `D:\Android\SDK` |
+| NDK | `D:\Android\SDK\ndk\27.0.12077973` |
+| cargo | `D:\.cargo\bin\cargo.exe`（用户级）或 `C:\Users\NiWinHao\.cargo\bin\cargo.exe` |
+| Gradle 缓存 | `E:\.gradle\`（用户本地，含 wrapper 缓存） |
+| 项目根 | `E:\Works\solidsugar_repos\NiumaStatusBar` |
+
+### 10.2 环境加载（`build_android.ps1`）
+
+项目根目录下已提供 `build_android.ps1`，**新 PowerShell 每次都要 dot-source 一次**：
+
+```powershell
+. .\build_android.ps1
+# 预期输出：
+#   ANDROID_HOME = D:\Android\SDK
+#   NDK_HOME     = D:\Android\SDK\ndk\27.0.12077973
+#   Java         = openjdk version "21.0.3"
+#   Cargo        = cargo 1.98.0
+#   adb devices  = <device-id> device
+```
+
+> ⚠️ 必须在项目根目录运行，否则 cargo / PATH 找不到。脚本同时设置 `JAVA_HOME`、`ANDROID_HOME`、`NDK_HOME` 和跨盘符 cargo junction（见 10.4）。
+
+### 10.3 国内 Maven 镜像（`E:\.gradle\init.d\`）
+
+新建 `E:\.gradle\init.d\aliyun-mirror.gradle`：
+
+```groovy
+allprojects {
+    buildscript {
+        repositories {
+            maven { url "https://maven.aliyun.com/repository/google" }
+            maven { url "https://maven.aliyun.com/repository/gradle-plugin" }
+            maven { url "https://maven.aliyun.com/repository/central" }
+            maven { url "https://maven.aliyun.com/repository/public" }
+        }
+    }
+    repositories {
+        maven { url "https://maven.aliyun.com/repository/google" }
+        maven { url "https://maven.aliyun.com/repository/gradle-plugin" }
+        maven { url "https://maven.aliyun.com/repository/central" }
+        maven { url "https://maven.aliyun.com/repository/public" }
+    }
+}
+
+settingsEvaluated { settings ->
+    settings.pluginManagement {
+        repositories {
+            maven { url "https://maven.aliyun.com/repository/gradle-plugin" }
+            maven { url "https://maven.aliyun.com/repository/google" }
+            maven { url "https://maven.aliyun.com/repository/public" }
+        }
+    }
+}
+```
+
+`wrapper distributionUrl` 不走 init.d（保留 `services.gradle.org` 命中本地缓存 `E:\.gradle\wrapper\dists\gradle-8.14.4-bin\...`）。
+
+`buildSrc/build.gradle.kts` 也需补镜像：
+
+```kotlin
+repositories {
+    maven { url = uri("https://maven.aliyun.com/repository/google") }
+    maven { url = uri("https://maven.aliyun.com/repository/central") }
+    maven { url = uri("https://maven.aliyun.com/repository/public") }
+    maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
+    google()
+    mavenCentral()
+    gradlePluginPortal()
+}
+```
+
+### 10.4 跨盘符 cargo junction
+
+cargo 注册表默认在 `C:\Users\NiWinHao\.cargo\registry\src\`，工程在 `E:\`，Kotlin daemon 跨盘符增量编译会抛 `IllegalArgumentException: this and base files have different roots`。建软链接归一：
+
+```powershell
+New-Item -ItemType Junction -Path "E:\.cargo" -Target "C:\Users\NiWinHao\.cargo"
+```
+
+### 10.5 Windows 开发者模式（一次性）
+
+Tauri 在 `rustBuildArm64Release` 之后用 symlink 把 `.so` 链进 `jniLibs/arm64-v8a/`，Windows 默认禁止普通用户创建 symlink：
+
+```powershell
+# 管理员 PowerShell 一次：
+reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock" /t REG_DWORD /f /v "AllowDevelopmentWithoutDevLicense" /d "1"
+```
+
+或：设置 → 隐私和安全 → 开发者选项 → 打开 **开发人员模式**。
+
+### 10.6 构建命令（正确写法）
+
+```powershell
+. .\build_android.ps1
+pnpm tauri android build --apk --debug        # debug APK（开发自测）
+pnpm tauri android build --apk                 # release APK（需签名）
+```
+
+产物：
+- debug：`src-tauri\gen\android\app\build\outputs\apk\arm64\debug\app-arm64-debug.apk`
+- release：`src-tauri\gen\android\app\build\outputs\apk\arm64\release\app-arm64-v8a-release.apk`
+
+> 💡 `gradle.properties` 已经配好 `targetList=aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android`（含 `arm64-v8a`/`armeabi-v7a`/`x86_64` 三个 ABI），不需要 CLI 再传 `--target`。**想只出 arm64 APK**，跳过 `pnpm tauri` 直接跑：
+>
+> ```powershell
+> gradlew.bat --project-dir src-tauri\gen\android --no-daemon assembleArm64Debug
+> ```
+
+❌ `--target aarch64`（会被 tauri-cli 转成短名 `-PtargetList=aarch64`，BuildTask 直接 cargo 时找不到 target 规格）
+❌ `--target aarch64-linux-android`（cargo 完整 triple，tauri-cli 不收）
+❌ `--no-bundle`（该参数属于 `tauri build`，不属于 `tauri android build`）
+❌ 直接跑 `gradlew assembleRelease`（跳过 tauri_build 嵌入 `dist/`，运行后白屏报 `asset not found :index.html`）
+
+### 10.7 签名（首次构建需要）
+
+```powershell
+# 在 src-tauri\gen\android\app\ 目录下：
+keytool -genkey -v -keystore niuma.keystore -alias niuma -keyalg RSA -keysize 2048 -validity 10000
+
+# 新建 keystore.properties（同目录）：
+#   storeFile=niuma.keystore
+#   storePassword=<你设置的密码>
+#   keyAlias=niuma
+#   keyPassword=<你设置的密码>
+```
+
+缺失时构建报：`SigningConfig "release" is missing required property "storeFile"`。
+
+### 10.8 安装与日志
+
+```powershell
+adb devices                                                       # 确认 <device-id> device
+adb install -r src-tauri\gen\android\app\build\outputs\apk\arm64\release\app-arm64-v8a-release.apk
+adb logcat -s MainActivity:* UsageWidgetCarouselService:* RingWidgetCarouselService:* WidgetDataReader:*
+```
+
+桌面长按 → Widgets → "AI Monitor · 2x2 Ring" → 拖到桌面，30s 内应见 5H/周/月三环或余额单环轮播。
+
+### 10.9 本次踩坑回顾（v0.1.55 前）
+
+| 报错 | 原因 | 修法 |
+|------|------|------|
+| `JAVA_HOME is set to an invalid directory` | `android-dev.ps1` / `env-android-windows.sh` 路径写错 | 改成实际路径 `D:\java\OpenJDK21U-jdk_x64_windows_hotspot_21.0.3_9` |
+| `Failed to install Android NDK` | tauri 自动装 NDK，没用本地 | 手动设 `NDK_HOME=D:\Android\SDK\ndk\27.0.12077973` |
+| `cargo metadata: program not found` | cargo 不在 PATH | `build_android.ps1` 里加 `C:\Users\NiWinHao\.cargo\bin` |
+| Kotlin daemon 跨盘符报错 | C 盘 cargo registry 与 E 盘工程跨盘 | junction `E:\.cargo` → `C:\Users\NiWinHao\.cargo` |
+| `asset not found :index.html` | 直接跑 `gradlew assembleRelease` 跳过资源嵌入 | 必须走 `pnpm tauri android build`（自动跑 `pnpm build` 把 dist/ 塞进 .so） |
+| `--no-bundle` 不被识别 | 属于 `tauri build` 而非 `tauri android build` | 删除 |
+| `Creation symbolic link is not allowed` | Windows 默认禁 symlink | 开启开发者模式 |
+
+### 10.10 v0.1.56 实战补充（2026-09-05）
+
+#### BOM 让 tauri-build / Vite 双双解析失败
+
+`src-tauri\tauri.conf.json` 和根目录 `package.json` 不应有 UTF-8 BOM（`EF BB BF`），但提交时混进去了。两端报错：
+
+| 文件 | 报错 |
+|------|------|
+| `src-tauri\tauri.conf.json` | `unable to parse JSON Tauri config file ... expected value at line 1 column 1`（tauri build.rs 卡这里，cargo 退出 101） |
+| `package.json` | `vite v6.4.3 ... error during build: SyntaxError: Unexpected token '﻿', "﻿{` |
+
+修法（一次性，PowerShell 5.1）：
+
+```powershell
+foreach ($p in @('src-tauri\tauri.conf.json','package.json')) {
+  $b = [System.IO.File]::ReadAllBytes($p)
+  if ($b[0] -eq 0xEF -and $b[1] -eq 0xBB -and $b[2] -eq 0xBF) {
+    [System.IO.File]::WriteAllBytes($p, $b[3..($b.Length-1)])
+    Write-Output "BOM stripped: $p"
+  }
+}
+```
+
+> 后续用支持 BOM 的编辑器（VS Code、Notepad++）保存，避免再次带 BOM。
+
+#### Gradle daemon 缓存 buildSrc 旧 jar
+
+`src-tauri\gen\android\buildSrc\build\libs\buildSrc.jar` 是 15:49:57 编出来的——早于我后来改 `RustPlugin.kt` 的时间。daemon 启动时只 `UP-TO-DATE` 检查（按文件 mtime 比较）就锁死，**改了 buildSrc 源码不重 build**的现象：
+
+```
+> Task :buildSrc:compileKotlin UP-TO-DATE
+> Task :buildSrc:jar UP-TO-DATE
+```
+
+但实际跑 `:app:rustBuildArm64Debug` 时还是报旧 bug（`could not find specification for target "aarch64"`），证明它根本没用上新代码。
+
+修法：
+
+```powershell
+cd src-tauri\gen\android
+.\gradlew.bat --stop                       # 停 daemon
+Remove-Item buildSrc\build\libs\buildSrc.jar -ErrorAction SilentlyContinue
+# 或者：--rerun-tasks 强制重跑整个 task 图
+.\gradlew.bat --no-daemon --rerun-tasks assembleArm64Debug
+```
+
+> 改 `buildSrc/**/*.kt` 后**必须** `--stop` + `--rerun-tasks`，否则新代码不生效。
+
+#### PowerShell 5.1 捕获 Gradle 输出的坑
+
+| 用法 | 现象 |
+|------|------|
+| `... \| Tee-Object -FilePath build.log` | Gradle 子进程 stderr 进不去，log 只到 Vite 输出就截断 |
+| `... 2>$null` | 即使构建成功 PowerShell 也返回 exit 2（stderr 被吞但 stderr 重定向本身算失败） |
+| `cmd 2>&1 \| Out-File -Encoding utf8 xxx.log` | ✅ 正确写法，能拿到全部输出 |
+
+后台运行则建议：
+
+```powershell
+& "src-tauri\gen\android\gradlew.bat" --project-dir "src-tauri\gen\android" --console=plain --no-daemon assembleArm64Debug 2>&1 | Out-File -Encoding utf8 "$env:TEMP\build.log"
+```
+
+#### 单独打 arm64 APK（v0.1.56 后推荐）
+
+`gradle.properties` 配的 `targetList` 包含三个 ABI，但**只想 arm64** 时跑整 `assembleDebug` 会顺带编 armv7 + x86_64（首次 5–10 分钟）。跳过 Rust 直接出 APK：
+
+```powershell
+cd src-tauri\gen\android
+.\gradlew.bat --project-dir . --no-daemon assembleArm64Debug
+```
+
+产物：`app\build\outputs\apk\arm64\debug\app-arm64-debug.apk`，再 `adb install -r` 到真机（参见 §10.8）。

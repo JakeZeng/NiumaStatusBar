@@ -52,12 +52,21 @@ object WidgetTheme {
         else -> null
     }
 
-    /** 给整卡 RemoteViews 着色（背景 + 1x2 布局的文本 id）。 */
+    /** 给整卡 RemoteViews 着色（背景 + 1x2 布局的文本 id）。
+     *
+     * v0.1.56 起 1x2 布局改为三行：
+     *   - widget_provider_name / widget_big_number / widget_updated_at 三个文本 id
+     *   - widget_sub_label 已删除（合并到 widget_big_number）
+     *   - widget_updated_at 用 textMuted（最弱化，与 row 3 的"小字辅助"语义匹配）
+     *
+     * 注意：这里 setTextColor 的 id 必须在所有 widget 布局（1x2 / 2x2_coding / 2x2_balance）
+     * 中都存在，否则 RemoteViews 在 apply 时抛异常。三个 id 在三份布局里都有定义。
+     */
     fun apply(rv: RemoteViews, themeId: String?) {
         val p = paletteFor(themeId) ?: return
         rv.setInt(R.id.widget_root, "setBackgroundResource", p.backgroundDrawable)
         rv.setInt(R.id.widget_provider_name, "setTextColor", p.textPrimary)
         rv.setInt(R.id.widget_big_number, "setTextColor", p.accent)
-        rv.setInt(R.id.widget_sub_label, "setTextColor", p.textSecondary)
+        rv.setInt(R.id.widget_updated_at, "setTextColor", p.textMuted)
     }
 }

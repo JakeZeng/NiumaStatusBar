@@ -15,10 +15,11 @@ import kotlin.math.roundToInt
  * 与 [WidgetLayoutBuilder] 平行存在，互不依赖。
  * WidgetLayoutBuilder 服务 1x2 横条；本类服务 2x2 卡片。
  *
- * 形态分支（按 [UsageSnapshot.isCodingPlan]）：
- *  - Coding Plan：3 空心环并排，环心 "5H" "1W" "1M"，环下剩余%，
- *    第 4 行 3 段相对重置时间。
- *  - 余额型：单大环，环心余额金额，环下已用%，第 4 行余额/总额。
+  * 形态分支（按 [UsageSnapshot.isCodingPlan]）：
+  *  - Coding Plan：2 或 3 空心环并排（5H / 1W / [1M]），
+  *    1M 环在无月剩余数据时隐藏；环下剩余%，第 4 行
+  *    2 或 3 段相对重置时间。
+  *  - 余额型：单大环，环心余额金额，环下已用%，第 4 行余额/总额。
  *
  * 复用既有约定：
  *  - 状态点语义（OK / error / disabled / pending）由 [statusDotFor] 计算
@@ -105,9 +106,10 @@ object RingWidgetLayoutBuilder {
     val pct5h = if (stale) null else s.quota5hRemainingPercent
     val pct1w = if (stale) null else s.quotaWeekRemainingPercent
     val pct1m = if (stale) null else s.monthRemainingPercent()
+    val hasMonth = pct1m != null
 
     renderOneRing(
-      context, rv,
+      rv,
       ringId = R.id.widget_ring_5h,
       pctId = R.id.widget_pct_5h,
       sizePx = sizePx, strokePx = strokePx,
@@ -118,7 +120,7 @@ object RingWidgetLayoutBuilder {
       stale = stale,
     )
     renderOneRing(
-      context, rv,
+      rv,
       ringId = R.id.widget_ring_1w,
       pctId = R.id.widget_pct_1w,
       sizePx = sizePx, strokePx = strokePx,
@@ -128,32 +130,39 @@ object RingWidgetLayoutBuilder {
       themeId = themeId,
       stale = stale,
     )
-    renderOneRing(
-      context, rv,
-      ringId = R.id.widget_ring_1m,
-      pctId = R.id.widget_pct_1m,
-      sizePx = sizePx, strokePx = strokePx,
-      centerText = context.getString(R.string.widget_month),
-      centerTextSizePx = dpToPx(context, 11f),
-      remainingPercent = pct1m,
-      themeId = themeId,
-      stale = stale,
-    )
+    if (hasMonth) {
+      renderOneRing(
+        rv,
+        ringId = R.id.widget_ring_1m,
+        pctId = R.id.widget_pct_1m,
+        sizePx = sizePx, strokePx = strokePx,
+        centerText = context.getString(R.string.widget_month),
+        centerTextSizePx = dpToPx(context, 11f),
+        remainingPercent = pct1m,
+        themeId = themeId,
+        stale = stale,
+      )
+    } else {
+      rv.setViewVisibility(R.id.widget_col_1m, android.view.View.GONE)
+    }
 
-    // 第 4 行：3 段相对重置时间
+    // 第 4 行：重置时间（根据月数据是否存在决定 2 段或 3 段）
     rv.setTextViewText(
       R.id.widget_reset_row,
       if (stale) staleLabel(context, s)
-      else resetRowFor(context, s),
+      else if (hasMonth) resetRowFor(context, s)
+      else resetRow2Segment(context, s),
     )
   }
 
   /**
    * 单环渲染：画 Bitmap 到 ImageView + 设置环下百分比 TextView。
    * 环颜色按 [remainingPercent] 阈值选取（与 RingTheme.ringForeground 对齐）。
+   *
+   * 注：[centerText] 和 [centerTextSizePx] 已在调用方解析好（避免
+   * 在本函数里再访问 Context），所以本函数不收 context 参数。
    */
   private fun renderOneRing(
-    context: Context,
     rv: RemoteViews,
     ringId: Int,
     pctId: Int,
@@ -202,12 +211,19 @@ object RingWidgetLayoutBuilder {
     rv.setTextColor(pctId, centerColor)
   }
 
-  /** Coding Plan 第 4 行："5H 0:23 后  │  周 5d 后  │  月 —"。 */
+  /** Coding Plan 第 4 行（有月数据）："5H 0:23 后  │  周 5d 后  │  月 —"。 */
   private fun resetRowFor(context: Context, s: UsageSnapshot): String {
     val r5h = s.relativeResetLabel("5h") ?: "—"
     val rw = s.relativeResetLabel("week") ?: "—"
     val rm = s.relativeResetLabel("month") ?: "—"
     return "${context.getString(R.string.widget_5h)} $r5h  │  ${context.getString(R.string.widget_week)} $rw  │  ${context.getString(R.string.widget_month)} $rm"
+  }
+
+  /** Coding Plan 第 4 行（无月数据）："5H 0:23 后  │  周 5d 后"。 */
+  private fun resetRow2Segment(context: Context, s: UsageSnapshot): String {
+    val r5h = s.relativeResetLabel("5h") ?: "—"
+    val rw = s.relativeResetLabel("week") ?: "—"
+    return "${context.getString(R.string.widget_5h)} $r5h  │  ${context.getString(R.string.widget_week)} $rw"
   }
 
   // ===== 余额型 单大环 =====

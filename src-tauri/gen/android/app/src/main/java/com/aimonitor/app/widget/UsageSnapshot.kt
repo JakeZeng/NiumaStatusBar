@@ -94,9 +94,12 @@ data class UsageSnapshot(
      * 输入是后端 UsageStatus 推过来的 *_reset_at 秒级时间戳，
      * 输出形如 "5H 0:23 后" / "周 5d 12h 后" / "月 12d 后"。
      *
-     * 复用 1x2 widget 既有 [subLabelFor] 的语义（来自前端
-     * src/lib/format.ts::formatRelativeReset），但 widget 端在
+     * 复用前端 src/lib/format.ts::formatRelativeReset 的语义，但 widget 端在
      * Kotlin 实现以避免跨语言依赖。
+     *
+     * v0.1.56 注释修订：原 docstring 引用了 1x2 的 [WidgetLayoutBuilder.subLabelFor]
+     * （v0.1.56 起 1x2 改为三行布局，该函数已被 [WidgetLayoutBuilder.formatMainRow]
+     * 取代），这里的相对重置时间格式与 1x2 主信息拼接无关，删除引用即可。
      *
      * @param period "5h" | "week" | "month"
      * @param nowSec 当前时间（秒），便于单测注入

@@ -4,6 +4,11 @@
 
     <string name="widget_desc_one">单供应商 · 余额一眼可见</string>
 
+    <!-- v0.1.52+：2x2 环图 widget -->
+    <string name="widget_label_ring">粮草用量 · 2x2 环图</string>
+
+    <string name="widget_desc_ring">编码套餐 5H/周/月 三环 · 或余额单环</string>
+
     <string name="widget_5h">5小时</string>
     <string name="widget_week">本周</string>
     <string name="widget_month">本月</string>
@@ -28,10 +33,20 @@
 
     <string name="widget_balance">余额</string>
 
-    <!-- v0.1.51+: 数据陈旧时第 2 行改显示的文案（阈值 15 分钟） -->
+    <!-- v0.1.52+：2x2 余额型专用 -->
+    <string name="widget_balance_used">已用 %1$d%%</string>
+    <string name="widget_balance_row">余额 %1$s  │  总额 %2$s</string>
+
+    <!-- v0.1.51+: 数据陈旧时第 2 行改显示的文案（阈值 15 分钟）；2x2 环图沿用 -->
     <string name="widget_stale_minutes">更新于 %1$d 分钟前</string>
     <string name="widget_stale_hours">更新于 %1$d 小时前</string>
     <string name="widget_stale_days">更新于 %1$d 天前</string>
+
+    <!-- v0.1.56+: 1x2 widget 第 3 行（更新时间）。无"更新于"前缀，第 3 行本身即表示时间 -->
+    <string name="widget_just_now">刚刚</string>
+    <string name="widget_updated_minutes">%1$d 分钟前</string>
+    <string name="widget_updated_hours">%1$d 小时前</string>
+    <string name="widget_updated_days">%1$d 天前</string>
 
     <string name="widget_updated_at">更新于 %1$s</string>
 
@@ -40,4 +55,10 @@
     <string name="widget_carousel_channel_desc">保持 1x2 小组件按 30 秒间隔轮播所有供应商</string>
     <string name="widget_carousel_notif_title">粮草用量</string>
     <string name="widget_carousel_notif_text">桌面小组件正在每 30 秒轮播供应商</string>
+
+    <!-- 2x2 环图轮播前台服务（v0.1.52+） -->
+    <string name="widget_ring_channel_name">环图小组件刷新</string>
+    <string name="widget_ring_channel_desc">保持 2x2 环图小组件按 30 秒间隔轮播所有供应商</string>
+    <string name="widget_ring_notif_title">粮草用量 · 环图</string>
+    <string name="widget_ring_notif_text">桌面环图小组件正在每 30 秒轮播供应商</string>
 </resources>

@@ -23,11 +23,7 @@ pub type CloseActionCache = Arc<std::sync::RwLock<Option<String>>>;
 
 /// 命令入口埋点（Info, Command）—— 所有命令统一调用一次。
 /// 调用者传入命令名（与 Rust 函数名一致，便于跟踪）。
-fn log_command_entry(
-    logger: &AppLogger,
-    name: &str,
-    details: Option<serde_json::Value>,
-) {
+fn log_command_entry(logger: &AppLogger, name: &str, details: Option<serde_json::Value>) {
     logger.log(
         LogLevel::Info,
         LogCategory::Command,
@@ -133,7 +129,11 @@ pub async fn delete_provider(
     poller: State<'_, Arc<Poller>>,
     logger: State<'_, Arc<AppLogger>>,
 ) -> Result<(), String> {
-    log_command_entry(&logger, "delete_provider", Some(serde_json::json!({ "id": id })));
+    log_command_entry(
+        &logger,
+        "delete_provider",
+        Some(serde_json::json!({ "id": id })),
+    );
     db.delete_provider(&id)
         .map_err(|e| log_command_error(&logger, "delete_provider", e, None))?;
     manager.delete_provider(id.clone()).await;
@@ -148,20 +148,21 @@ pub async fn fetch_provider_status(
     manager: State<'_, Arc<ProviderManager>>,
     logger: State<'_, Arc<AppLogger>>,
 ) -> Result<UsageStatus, String> {
-    log_command_entry(&logger, "fetch_provider_status", Some(serde_json::json!({ "id": id })));
+    log_command_entry(
+        &logger,
+        "fetch_provider_status",
+        Some(serde_json::json!({ "id": id })),
+    );
     let providers = manager.get_providers().await;
-    let provider = providers
-        .iter()
-        .find(|p| p.id == id)
-        .ok_or_else(|| {
-            log_command_error(
-                &logger,
-                "fetch_provider_status",
-                "Provider not found",
-                Some(serde_json::json!({ "id": id })),
-            );
-            "Provider not found".to_string()
-        })?;
+    let provider = providers.iter().find(|p| p.id == id).ok_or_else(|| {
+        log_command_error(
+            &logger,
+            "fetch_provider_status",
+            "Provider not found",
+            Some(serde_json::json!({ "id": id })),
+        );
+        "Provider not found".to_string()
+    })?;
     let status = manager.fetch_usage(provider).await.map_err(|e| {
         log_command_error(
             &logger,
@@ -263,6 +264,42 @@ pub async fn get_usage_history(
 ) -> Result<Vec<UsageStatus>, String> {
     db.get_usage_history(&provider_id, limit.unwrap_or(50), since)
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn open_download_folder() -> Result<(), String> {
+    // Tauri 1.x 的 tauri::api::{path,shell} 在 2.x 已删除（迁移到
+    // tauri-plugin-shell / tauri-plugin-opener 等独立 plugin）。这里用
+    // `dirs` 拿 home 路径，按平台调系统命令打开 Downloads 目录，零新增
+    // Tauri 插件依赖。Android 走 #[cfg(not(desktop))] 走空实现。
+    #[cfg(desktop)]
+    {
+        if let Some(home) = dirs::home_dir() {
+            let downloads = home.join("Downloads");
+            let path_str = downloads.to_string_lossy().to_string();
+            #[cfg(target_os = "windows")]
+            std::process::Command::new("explorer.exe")
+                .arg(&path_str)
+                .spawn()
+                .map_err(|e| format!("open download folder: {}", e))?;
+            #[cfg(target_os = "macos")]
+            std::process::Command::new("open")
+                .arg(&path_str)
+                .spawn()
+                .map_err(|e| format!("open download folder: {}", e))?;
+            #[cfg(target_os = "linux")]
+            std::process::Command::new("xdg-open")
+                .arg(&path_str)
+                .spawn()
+                .map_err(|e| format!("open download folder: {}", e))?;
+            return Ok(());
+        }
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = "";
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -484,10 +521,7 @@ pub async fn window_hide_to_tray(
 }
 
 #[tauri::command]
-pub async fn app_quit(
-    app: AppHandle,
-    logger: State<'_, Arc<AppLogger>>,
-) -> Result<(), String> {
+pub async fn app_quit(app: AppHandle, logger: State<'_, Arc<AppLogger>>) -> Result<(), String> {
     log_command_entry(&logger, "app_quit", None);
     app.exit(0);
     Ok(())
@@ -527,7 +561,9 @@ mod tray_autostart_impl {
                 return Ok(v);
             }
         }
-        let raw = db.get_setting(TRAY_VISIBLE_KEY).map_err(|e| e.to_string())?;
+        let raw = db
+            .get_setting(TRAY_VISIBLE_KEY)
+            .map_err(|e| e.to_string())?;
         let v = match raw.as_deref() {
             Some("0") => false,
             _ => true, // None 或 "1" 都视为可见
@@ -554,14 +590,17 @@ mod tray_autostart_impl {
 }
 
 #[tauri::command]
-pub async fn get_tray_visible(
-    db: State<'_, Arc<Database>>,
-) -> Result<bool, String> {
+pub async fn get_tray_visible(db: State<'_, Arc<Database>>) -> Result<bool, String> {
     // 桌面端读偏好；移动端直接返回 true（tray 不可用时该值无意义）
     #[cfg(desktop)]
-    { tray_autostart_impl::read_tray_visible(&db) }
+    {
+        tray_autostart_impl::read_tray_visible(&db)
+    }
     #[cfg(not(desktop))]
-    { let _ = db; Ok(true) }
+    {
+        let _ = db;
+        Ok(true)
+    }
 }
 
 #[tauri::command]
@@ -586,18 +625,23 @@ pub async fn set_tray_visible(
     #[cfg(desktop)]
     crate::tray::apply_tray_visibility(&app, visible);
     #[cfg(not(desktop))]
-    { let _ = (&app, visible); }
+    {
+        let _ = (&app, visible);
+    }
     Ok(())
 }
 
 #[tauri::command]
-pub async fn get_autostart(
-    db: State<'_, Arc<Database>>,
-) -> Result<bool, String> {
+pub async fn get_autostart(db: State<'_, Arc<Database>>) -> Result<bool, String> {
     #[cfg(desktop)]
-    { tray_autostart_impl::read_autostart(&db) }
+    {
+        tray_autostart_impl::read_autostart(&db)
+    }
     #[cfg(not(desktop))]
-    { let _ = db; Ok(false) }
+    {
+        let _ = db;
+        Ok(false)
+    }
 }
 
 #[tauri::command]
@@ -622,9 +666,8 @@ pub async fn set_autostart(
     // Windows：同步操作注册表
     #[cfg(all(desktop, target_os = "windows"))]
     {
-        apply_windows_autostart(enabled).map_err(|e| {
-            log_command_error(&logger, "set_autostart", &e, None)
-        })?;
+        apply_windows_autostart(enabled)
+            .map_err(|e| log_command_error(&logger, "set_autostart", &e, None))?;
     }
     // Linux/macOS：偏好已持久化，应用启动时由安装包/desktop 文件决定
     let _ = (_app, enabled);
@@ -636,8 +679,7 @@ fn apply_windows_autostart(enabled: bool) -> Result<(), String> {
     use std::process::Command;
     // 用 reg.exe 读写 HKCU，避免引入 winreg 依赖（构建矩阵更轻）
     // Run 键值名：固定为 exe 文件名（不含扩展名），保证可被后续 reg delete 命中
-    let exe = std::env::current_exe()
-        .map_err(|e| format!("current_exe: {}", e))?;
+    let exe = std::env::current_exe().map_err(|e| format!("current_exe: {}", e))?;
     let value_name = exe
         .file_stem()
         .and_then(|s| s.to_str())
@@ -647,7 +689,17 @@ fn apply_windows_autostart(enabled: bool) -> Result<(), String> {
     let key = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
     let output = if enabled {
         Command::new("reg")
-            .args(["add", key, "/v", &value_name, "/t", "REG_SZ", "/d", &exe_str, "/f"])
+            .args([
+                "add",
+                key,
+                "/v",
+                &value_name,
+                "/t",
+                "REG_SZ",
+                "/d",
+                &exe_str,
+                "/f",
+            ])
             .output()
     } else {
         Command::new("reg")

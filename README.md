@@ -1,6 +1,14 @@
+<div align="center">
+  <img src="src-tauri/icons/icon.png" alt="NiumaStatusBar" width="128" height="128"/>
+</div>
+
 # AI 模型监控 (AI Model Monitor)
 
 一款跨平台、轻量、高颜值的 AI 模型使用状态监控工具，支持自定义 API 配置与三大主题切换。
+
+> **品牌标识**：数据脉冲徽章 — 圆角方块底 + 心电脉冲线，对应应用对 AI 模型用量（余额 / 5h / 周 / 月额度）的实时监控语义。配色为青(`#22d3ee`)→紫(`#8b5cf6`)→粉(`#ec4899`)对角渐变，呼应"赛博朋克"主题。
+>
+> 源文件：`src-tauri/icons/icon.svg` · 重新生成全部变体：`python scripts/generate_icons.py`。
 
 ## ✨ 特性
 
@@ -111,8 +119,10 @@ ai-model-monitor/
 │   │   ├── poller.rs       # 异步轮询调度
 │   │   ├── storage.rs      # SQLite 存储
 │   │   └── commands.rs     # IPC 命令
-│   ├── icons/              # 应用图标
+│   ├── icons/              # 应用图标（统一品牌资产；源 SVG + 多尺寸 PNG/ICO/ICNS/iOS）
 │   └── tauri.conf.json     # Tauri 配置
+├── scripts/
+│   └── generate_icons.py   # 从 icon.svg 重新生成全部图标变体
 ├── docs/                   # 文档
 └── .github/workflows/      # CI/CD
 ```

@@ -8,6 +8,8 @@ import android.util.Log
 import android.view.View
 import android.webkit.WebView
 import androidx.activity.enableEdgeToEdge
+import com.aimonitor.app.widget.RingWidgetCarouselService
+import com.aimonitor.app.widget.RingWidgetProvider
 import com.aimonitor.app.widget.UsageWidgetCarouselService
 import com.aimonitor.app.widget.UsageWidgetProvider
 import com.aimonitor.app.widget.WidgetLayoutBuilder
@@ -33,18 +35,33 @@ class MainActivity : TauriActivity() {
   }
 
   /**
-   * 仅当确实存在已添加的 1x2 widget 实例时才启动轮播服务，
+   * 仅当确实存在已添加的 1x2 / 2x2 widget 实例时才启动对应轮播服务，
    * 避免用户没用 widget 时凭空出现常驻通知。
+   *
+   * 1x2 与 2x2 各有独立 FGS：UsageWidgetCarouselService 走 UsageWidgetProvider，
+   * RingWidgetCarouselService 走 RingWidgetProvider。两边数据读取共享
+   * WidgetDataReader（同进程同 SQLite 直读），但 service 实例、SharedPreferences
+   * 持久化 index、通知渠道各自分离，所以必须分别检查 + 分别启动。
    */
   private fun startCarouselIfWidgetExists() {
+    val mgr = AppWidgetManager.getInstance(this)
+    // 1x2 横条轮播
     try {
-      val ids = AppWidgetManager.getInstance(this)
-        .getAppWidgetIds(ComponentName(this, UsageWidgetProvider::class.java))
-      if (ids != null && ids.isNotEmpty()) {
+      val ids1x2 = mgr.getAppWidgetIds(ComponentName(this, UsageWidgetProvider::class.java))
+      if (ids1x2 != null && ids1x2.isNotEmpty()) {
         UsageWidgetCarouselService.start(this)
       }
     } catch (t: Throwable) {
-      Log.w("MainActivity", "startCarouselIfWidgetExists failed", t)
+      Log.w("MainActivity", "start 1x2 carousel failed", t)
+    }
+    // 2x2 环图轮播（v0.1.52+）
+    try {
+      val ids2x2 = mgr.getAppWidgetIds(ComponentName(this, RingWidgetProvider::class.java))
+      if (ids2x2 != null && ids2x2.isNotEmpty()) {
+        RingWidgetCarouselService.start(this)
+      }
+    } catch (t: Throwable) {
+      Log.w("MainActivity", "start 2x2 ring carousel failed", t)
     }
   }
 
